@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "HomeMaid",
+    "slug": "homemaid",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF6F0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.homemaid.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyDuaZpBYJMCwElZVRO9wgLw6YbJFikW0lI"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FAF6F0"
+      },
+      "package": "com.homemaid.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDuaZpBYJMCwElZVRO9wgLw6YbJFikW0lI"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "HomeMaid uses your location to find nearby maids."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
