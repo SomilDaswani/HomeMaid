@@ -109,7 +109,7 @@ HomeMaid/
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/HomeMaid.git
+git clone https://github.com/SomilDaswani/HomeMaid.git
 cd HomeMaid
 ```
 
@@ -181,7 +181,6 @@ HomeMaid utilizes two specialized AI Agents through the Gemini API:
 - **Voice Agent Integration:** Direct speech-to-text integration allowing users to simply talk to the app instead of typing.
 - **n8n Webhook Automations:** Automated email and WhatsApp notifications for booking confirmations.
 - **Comprehensive Documentation:** Detailed system architecture diagrams and database schema references.
-- **Payment Integration:** Secure in-app payment handling.
 
 ---
 
