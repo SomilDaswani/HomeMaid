@@ -1,6 +1,6 @@
 # HomeMaid — AI-Powered Maid Booking Platform
 
-> A production-ready, on-demand marketplace that connects homeowners with verified maids. It uses natural language AI to triage service requests, instantly match requirements with local availability, and facilitate real-time bidding — all through a seamless voice or text experience.
+> A production-ready, on-demand marketplace that connects homeowners with verified maids. It uses natural language AI to triage service requests, instantly match requirements with local availability, and facilitate real-time bidding — all through a seamless text experience (with Voice coming soon).
 
 [![Status](https://img.shields.io/badge/Status-Development-ff9900?style=flat-square)](#) ![React Native](https://img.shields.io/badge/React_Native-Expo-61dafb?style=flat-square&logo=react) ![Google Gemini](https://img.shields.io/badge/Google_Gemini-AI_Engine-4285F4?style=flat-square&logo=google) ![Node.js](https://img.shields.io/badge/Node.js-Express-339933?style=flat-square&logo=node.js) ![Supabase](https://img.shields.io/badge/Supabase-Realtime_DB-3ECF8E?style=flat-square&logo=supabase)
 
@@ -8,7 +8,7 @@
 
 ## What is HomeMaid?
 
-HomeMaid is a modern marketplace app designed to eliminate the friction of finding reliable household help. Users tap the mic or type their need naturally, and HomeMaid handles the rest:
+HomeMaid is a modern marketplace app designed to eliminate the friction of finding reliable household help. Users type their need naturally, and HomeMaid handles the rest:
 
 - Extracts exactly what needs to be done (cleaning, cooking, laundry)
 - Auto-detects the user's location via GPS
@@ -23,7 +23,7 @@ No forms. No scrolling through endless profiles. Just state your need.
 ## Architecture
 
 ```
-User speaks or types via Expo App
+User types request via Expo App
         ↓
 React Native Frontend — live status UI, realtime bid tracking
         ↓
@@ -57,12 +57,11 @@ Supabase Database — PostGIS for location, Realtime WebSockets for bids
 
 ## Features
 
-- **Natural Language Intent** — Voice-to-text or typed input powered by Gemini to understand service needs instantly.
+- **Natural Language Intent** — Text input powered by Gemini to understand service needs instantly.
 - **Real-Time Bidding** — Nearby maids receive "Quick Service Requests" and bid on them in real-time.
 - **Geospatial Matching** — Uses PostGIS to ensure only maids within the user's coverage area are notified.
 - **Live Trace UI** — See exactly how the AI agent is thinking and parsing your request live on screen.
 - **Full Booking Lifecycle** — Track a booking from 'pending' to 'en_route' to 'completed'.
-- **Demo Ready** — Seeded with 100+ highly detailed mock maids across Karachi (Clifton, DHA, Malir Cantt) for testing.
 
 ---
 
@@ -79,7 +78,7 @@ HomeMaid/
 │
 ├── app/                    # React Native Expo Frontend
 │   ├── src/
-│   │   ├── components/     # Reusable UI (VoiceButton, etc.)
+│   │   ├── components/     # Reusable UI
 │   │   ├── screens/        # Booking, BidList, AgentTrace screens
 │   │   ├── lib/supabase.js # Supabase client initialization
 │   │   └── App.js          # Navigation and Entry
@@ -89,7 +88,9 @@ HomeMaid/
 ├── sql/                    # Supabase Database Migrations
 │   ├── 01_extensions.sql   # PostGIS and UUID
 │   ├── 02_tables.sql       # Schema for maids, bookings, etc.
-│   └── 06_seed.sql         # 100+ localized mock maids
+│   ├── 03_indexes.sql      # Spatial indexes and Realtime setup
+│   ├── 04_functions.sql    # Matching logic and distances
+│   └── 05_cron.sql         # Automated timeout jobs
 │
 └── README.md
 ```
@@ -114,8 +115,9 @@ cd HomeMaid
 
 ### 2. Set up the Database (Supabase)
 
-In your Supabase project's SQL Editor, run the SQL scripts found in the `sql/` folder sequentially. 
-*Note: Make sure to run `06_seed.sql` last to populate the database with the 100 mock maids and enable Realtime.*
+In your Supabase project's SQL Editor, run the SQL scripts found in the `sql/` folder sequentially (01 through 05) to set up the tables, spatial indexes, and functions.
+
+*(Note: Mock data seed scripts are excluded from the repository. You can create your own mock maids via the Supabase dashboard for testing).*
 
 ### 3. Set up the Backend
 
@@ -174,14 +176,12 @@ HomeMaid utilizes two specialized AI Agents through the Gemini API:
 
 ---
 
-## Upcoming: Post-Booking Automation
+## Upcoming Features
 
-In the next phase, we are integrating **n8n** Webhooks directly into the Supabase database.
-Whenever a booking status changes to `confirmed`:
-1. n8n catches the webhook payload.
-2. Sends a WhatsApp confirmation to the Maid.
-3. Sends an Email receipt to the Homeowner.
-4. Logs the transaction into an admin Google Sheet.
+- **Voice Agent Integration:** Direct speech-to-text integration allowing users to simply talk to the app instead of typing.
+- **n8n Webhook Automations:** Automated email and WhatsApp notifications for booking confirmations.
+- **Comprehensive Documentation:** Detailed system architecture diagrams and database schema references.
+- **Payment Integration:** Secure in-app payment handling.
 
 ---
 
