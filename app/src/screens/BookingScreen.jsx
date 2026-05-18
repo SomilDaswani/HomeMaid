@@ -15,7 +15,6 @@ const SERVICE_TYPES = [
   { id: 'cleaning',  label: 'Safai',   icon: '🧹' },
   { id: 'laundry',   label: 'Dhulai',  icon: '👕' },
   { id: 'cooking',   label: 'Khana',   icon: '🍳' },
-  { id: 'childcare', label: 'Bachay',  icon: '👶' },
 ];
 
 // ── Simple date helpers ──────────────────────────────────────────────────────
@@ -100,7 +99,12 @@ export default function BookingScreen({ navigation }) {
     const hours     = (endDate - startDate) / 3600000;
     if (hours <= 0) return;
 
-    calculatePrice({ service_types: [serviceType], complexity: { duration_hours: hours } })
+    calculatePrice({
+      service_types: [serviceType],
+      complexity: { duration_hours: hours },
+      scheduled_date: date,
+      scheduled_start: startHour,
+    })
       .then(data => setPriceData(data))
       .catch(() => {});
   }, [serviceType, startHour, endHour, date]);
@@ -178,20 +182,22 @@ export default function BookingScreen({ navigation }) {
     try {
       const sessionId = await getOrCreateSession();
       const booking = await createBooking({
-        session_id:     sessionId,
-        maid_id:        selectedMaid.id,
-        service_types:  [serviceType],
-        scheduled_date: date,
-        slot_start:     buildSlotISO(date, startHour),
-        slot_end:       buildSlotISO(date, endHour),
-        agreed_price:   priceData?.recommended_price || selectedMaid.rate_min,
+        session_id:      sessionId,
+        maid_id:         selectedMaid.id,
+        service_types:   [serviceType],
+        scheduled_date:  date,
+        scheduled_start: startHour,
+        scheduled_end:   endHour,
+        total_price:     priceData?.recommended_price || selectedMaid.rate_min,
       });
 
-      navigation.replace('BookingStatus', {
-        requestId: booking.id,
-        maid:      selectedMaid,
-        price:     booking.agreed_price,
-        type:      'booking',
+      navigation.replace('Confirmation', {
+        maid:        selectedMaid,
+        price:       booking.total_price || priceData?.recommended_price || selectedMaid.rate_min,
+        serviceType: serviceType,
+        details:     { date, time: `${startHour} – ${endHour}` },
+        status:      'confirmed',
+        type:        'booking',
       });
     } catch (err) {
       const msg = err?.response?.data?.error;

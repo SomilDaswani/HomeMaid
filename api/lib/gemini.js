@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const supabase = require('./supabase');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 /**
  * Call Gemini and auto-log the result to agent_traces.
@@ -37,17 +37,19 @@ async function callGemini(agentName, prompt, sessionType = 'voice_intent', refer
     output = null;
   }
 
-  // Fire-and-forget trace log — write flat columns that AgentTraceScreen reads
+  // Fire-and-forget trace log — flat row per call, matching 02_tables.sql schema
   const duration = Date.now() - start;
   supabase.from('agent_traces').insert({
-    session_id:   sessionId,
-    session_type: sessionType,
-    reference_id: referenceId,
-    agent_name:   agentName,
-    prompt:       prompt.slice(0, 2000),  // cap to avoid oversized rows
-    output:       output,
-    latency_ms:   duration,
-    error:        errorMsg,
+    session_id:     sessionId,
+    session_type:   sessionType,
+    reference_id:   referenceId,
+    agent_name:     agentName,
+    input_summary:  prompt.slice(0, 500),
+    output_summary: typeof output === 'string' ? output.slice(0, 500) : JSON.stringify(output)?.slice(0, 500),
+    full_input:     { prompt: prompt.slice(0, 4000) },
+    full_output:    typeof output === 'object' ? output : { text: output },
+    duration_ms:    duration,
+    error:          errorMsg,
   }).then(() => {}).catch(() => {});
 
   return output;

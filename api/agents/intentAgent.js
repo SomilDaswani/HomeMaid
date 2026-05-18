@@ -5,7 +5,7 @@ Extract structured data from Roman Urdu, Urdu, or English service requests.
 
 Return ONLY valid JSON, no explanation, no markdown. Schema:
 {
-  "service_type": "cleaning|laundry|cooking|childcare",
+  "service_type": "cleaning|laundry|cooking",
   "area": "string or null",
   "rooms": "number or null",
   "tasks": ["array of specific tasks or empty"],

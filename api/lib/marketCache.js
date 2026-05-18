@@ -13,10 +13,9 @@ const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
  * Falls back to a hardcoded default if DB query fails.
  */
 const DEFAULTS = {
-  cleaning:  1200,
-  laundry:   900,
-  cooking:   1000,
-  childcare: 1500,
+  cleaning:  500,
+  laundry:   400,
+  cooking:   600,
 };
 
 async function refreshCache() {

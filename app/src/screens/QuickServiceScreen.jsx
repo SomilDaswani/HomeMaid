@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, SafeAreaView, StatusBar,
@@ -15,7 +15,6 @@ const SERVICE_TYPES = [
   { id: 'cleaning',  label: 'Safai',     icon: '🧹' },
   { id: 'laundry',   label: 'Dhulai',    icon: '👕' },
   { id: 'cooking',   label: 'Khana',     icon: '🍳' },
-  { id: 'childcare', label: 'Bachay',    icon: '👶' },
 ];
 
 const ROOM_OPTIONS = [1, 2, 3, 4, 5];
@@ -36,9 +35,12 @@ export default function QuickServiceScreen({ navigation, route }) {
   const fetchPrice = useCallback(async (svc, r) => {
     setLoadingPrice(true);
     try {
+      const now = new Date();
       const data = await calculatePrice({
         service_types: [svc],
         complexity: { rooms: r, tasks: selectedTasks, duration_hours: Math.max(1, r * 0.7) },
+        scheduled_date: now.toISOString().split('T')[0],
+        scheduled_start: now.toTimeString().slice(0, 5),
       });
       setPriceData(data);
     } catch {
@@ -47,6 +49,9 @@ export default function QuickServiceScreen({ navigation, route }) {
       setLoadingPrice(false);
     }
   }, [selectedTasks]);
+
+  // Auto-fetch price on mount so user sees it before submitting
+  useEffect(() => { fetchPrice(serviceType, rooms); }, []);
 
   const handleServiceChange = (id) => {
     setServiceType(id);
@@ -197,17 +202,17 @@ export default function QuickServiceScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Submit */}
+        {/* Submit — disabled until price is loaded */}
         <TouchableOpacity
-          style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
+          style={[styles.submitBtn, (submitting || !priceData) && { opacity: 0.5 }]}
           onPress={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !priceData}
           activeOpacity={0.88}
         >
           {submitting ? (
             <ActivityIndicator color={Colors.surface} />
           ) : (
-            <Text style={styles.submitBtnText}>⚡ {Strings.quickService.submitButton}</Text>
+            <Text style={styles.submitBtnText}>🔍 Maid Dhundein</Text>
           )}
         </TouchableOpacity>
 

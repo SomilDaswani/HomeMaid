@@ -112,11 +112,11 @@ export default function BidListScreen({ navigation, route }) {
 
       // 400ms pause before navigating (per spec)
       setTimeout(() => {
-        navigation.replace('BookingStatus', {
-          requestId: request.id,
-          maidId: result.maid_id,
-          price: result.price,
+        navigation.replace('Confirmation', {
           maid: bid.maids || bid.maid,
+          price: result.price || bid.offered_price,
+          serviceType: request.service_types?.[0],
+          status: 'bid_selected',
           type: 'quick_service',
         });
       }, 400);

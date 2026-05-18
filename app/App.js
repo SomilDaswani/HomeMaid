@@ -28,6 +28,7 @@ import DisputeScreen from './src/screens/DisputeScreen';
 import MaidProfileScreen from './src/screens/MaidProfileScreen';
 import AgentTraceScreen from './src/screens/AgentTraceScreen';
 import BookingsListScreen from './src/screens/BookingsListScreen';
+import ConfirmationScreen from './src/screens/ConfirmationScreen';
 
 // Placeholder screens for Day 2+ (prevents navigation errors)
 const PlaceholderScreen = ({ route }) => (
@@ -188,6 +189,8 @@ export default function App() {
             <Stack.Screen name="Review" component={ReviewScreen}
               options={{ presentation: 'modal' }} />
             <Stack.Screen name="Dispute" component={DisputeScreen}
+              options={{ presentation: 'modal' }} />
+            <Stack.Screen name="Confirmation" component={ConfirmationScreen}
               options={{ presentation: 'modal' }} />
           </Stack.Navigator>
         </NavigationContainer>
