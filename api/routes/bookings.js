@@ -120,7 +120,20 @@ router.patch('/:id/status', async (req, res) => {
       }
 
       const { data: confirmed } = await supabase
-        .from('bookings').select('*').eq('id', req.params.id).single();
+        .from('bookings').select('*, maids ( id, name, phone, avg_rating )').eq('id', req.params.id).single();
+
+      // Fire simulated notification trace
+      supabase.from('agent_traces').insert({
+        session_id:     confirmed?.session_id || null,
+        session_type:   'booking',
+        agent_name:     'NotificationAgent',
+        input_summary:  `Booking confirmed: ${req.params.id.slice(0, 8)}`,
+        output_summary: `SMS simulated to homeowner: "HomeMaid: ${confirmed?.maids?.name || 'Maid'} aap ke ghar aa rahi hain."`,
+        full_input:     { booking_id: req.params.id, maid_id: confirmed?.maid_id },
+        full_output:    { channel: 'sms_simulated', delivered: true, maid_name: confirmed?.maids?.name, maid_phone: confirmed?.maids?.phone },
+        duration_ms:    0,
+      }).then(() => {}).catch(() => {});
+
       return res.json(confirmed);
     }
 

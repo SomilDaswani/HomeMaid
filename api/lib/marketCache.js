@@ -6,6 +6,7 @@ const supabase = require('./supabase');
 // Cache structure: { service_type: median_rate_pkr }
 let cache = {};
 let lastRefresh = 0;
+let initialized = false;
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 /**
@@ -13,9 +14,12 @@ const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
  * Falls back to a hardcoded default if DB query fails.
  */
 const DEFAULTS = {
-  cleaning:  500,
-  laundry:   400,
-  cooking:   600,
+  cleaning:          450,
+  laundry:           350,
+  cooking:           550,
+  washing_dishes:    250,
+  cleaning_washroom: 300,
+  ironing_clothes:   300,
 };
 
 async function refreshCache() {
@@ -53,20 +57,26 @@ async function refreshCache() {
 }
 
 async function getMedian(serviceType) {
-  const now = Date.now();
-  if (!lastRefresh || now - lastRefresh > REFRESH_INTERVAL_MS) {
+  if (!initialized || Date.now() - lastRefresh > REFRESH_INTERVAL_MS) {
     await refreshCache();
+    initialized = true;
   }
-  return cache[serviceType] ?? DEFAULTS[serviceType] ?? 1000;
+  return cache[serviceType] ?? DEFAULTS[serviceType] ?? 500;
 }
 
 async function getAllMedians() {
-  const now = Date.now();
-  if (!lastRefresh || now - lastRefresh > REFRESH_INTERVAL_MS) {
+  if (!initialized || Date.now() - lastRefresh > REFRESH_INTERVAL_MS) {
     await refreshCache();
+    initialized = true;
   }
-  // Fill missing with defaults
   return { ...DEFAULTS, ...cache };
 }
 
-module.exports = { getMedian, getAllMedians, refreshCache };
+function resetCache() {
+  cache = {};
+  lastRefresh = 0;
+  initialized = false;
+  console.log('[MARKET_CACHE] Cache forcefully reset');
+}
+
+module.exports = { getMedian, getAllMedians, refreshCache, resetCache };

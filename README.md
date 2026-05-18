@@ -1,6 +1,6 @@
 # HomeMaid — AI-Powered Maid Booking Platform
 
-> A production-ready, on-demand marketplace that connects homeowners with verified maids. It uses natural language AI to triage service requests, instantly match requirements with local availability, and facilitate real-time bidding — all through a seamless text experience (with Voice coming soon).
+> A production-ready, on-demand marketplace that connects homeowners with verified maids. It uses natural language AI and voice integration to triage service requests, instantly match requirements with local availability, and facilitate real-time bidding — all through a seamless voice or text experience.
 
 [![Status](https://img.shields.io/badge/Status-Development-ff9900?style=flat-square)](#) ![React Native](https://img.shields.io/badge/React_Native-Expo-61dafb?style=flat-square&logo=react) ![Google Gemini](https://img.shields.io/badge/Google_Gemini-AI_Engine-4285F4?style=flat-square&logo=google) ![Node.js](https://img.shields.io/badge/Node.js-Express-339933?style=flat-square&logo=node.js) ![Supabase](https://img.shields.io/badge/Supabase-Realtime_DB-3ECF8E?style=flat-square&logo=supabase)
 
@@ -8,13 +8,13 @@
 
 ## What is HomeMaid?
 
-HomeMaid is a modern marketplace app designed to eliminate the friction of finding reliable household help. Users type their need naturally, and HomeMaid handles the rest:
+HomeMaid is a modern marketplace app designed to eliminate the friction of finding reliable household help. Users type or speak their need naturally, and HomeMaid handles the rest:
 
-- Extracts exactly what needs to be done (cleaning, cooking, laundry)
+- Extracts exactly what needs to be done (Safai, Dhulai, Khana, Bartan, Washroom, Istri)
 - Auto-detects the user's location via GPS
 - Broadcasts the job instantly to nearby available maids via Supabase Realtime
 - Collects and displays competitive bids in seconds
-- Allows the homeowner to confirm the booking instantly
+- Allows the homeowner to confirm the booking instantly with real-time push notifications
 
 No forms. No scrolling through endless profiles. Just state your need.
 
@@ -23,19 +23,19 @@ No forms. No scrolling through endless profiles. Just state your need.
 ## Architecture
 
 ```
-User types request via Expo App
+User speaks or types request via Expo App
         ↓
 React Native Frontend — live status UI, realtime bid tracking
         ↓
 Express Backend (Node.js) — session handling, secure agent routing
         ↓
-Google Gemini AI — Intent Parsing + Intelligent Maid Matching
+Groq Whisper (Speech-to-Text) + Google Gemini AI (Intent Parsing + Intelligent Maid Matching)
         ↓
 Supabase Database — PostGIS for location, Realtime WebSockets for bids
         ↓
 ┌──────────────────┬─────────────────────┐
 │  Bids Generated  │  Booking Confirmed  │
-│  Realtime Sync   │  n8n Webhook Trigger│
+│  Realtime Sync   │  Push Notifications │
 └──────────────────┴─────────────────────┘
 ```
 
@@ -46,22 +46,25 @@ Supabase Database — PostGIS for location, Realtime WebSockets for bids
 | Layer | Technology |
 |---|---|
 | Frontend | React Native + Expo |
-| AI Engine | Google Gemini |
+| AI Engine | Google Gemini (`gemini-2.5-flash-lite`) |
+| Voice Processing | Groq Whisper API |
 | Backend | Node.js + Express |
 | Database | Supabase (PostgreSQL) |
 | Location Services | PostGIS (Spatial queries) |
 | Live Data | Supabase Realtime (WebSockets) |
-| Future Automation | n8n (Webhooks) |
+| Notifications | Expo Notifications |
 
 ---
 
 ## Features
 
-- **Natural Language Intent** — Text input powered by Gemini to understand service needs instantly.
+- **Full Voice Pipeline** — Direct speech-to-text integration via Groq Whisper allows users to simply talk to the app instead of typing.
+- **Natural Language Intent** — AI-powered parser to understand 6 different service types (Cleaning, Laundry, Cooking, Washing Dishes, Washroom Cleaning, Ironing) and job durations.
+- **Dynamic Pricing Engine** — Calculates recommended prices based on market median, task duration, complexity, time of day, weekend surges, and real-time area demand.
 - **Real-Time Bidding** — Nearby maids receive "Quick Service Requests" and bid on them in real-time.
 - **Geospatial Matching** — Uses PostGIS to ensure only maids within the user's coverage area are notified.
 - **Live Trace UI** — See exactly how the AI agent is thinking and parsing your request live on screen.
-- **Full Booking Lifecycle** — Track a booking from 'pending' to 'en_route' to 'completed'.
+- **Push Notifications** — Real-time local push notifications for booking confirmations and maid en-route status.
 
 ---
 
@@ -178,9 +181,9 @@ HomeMaid utilizes two specialized AI Agents through the Gemini API:
 
 ## Upcoming Features
 
-- **Voice Agent Integration:** Direct speech-to-text integration allowing users to simply talk to the app instead of typing.
+- **Multi-lingual Support:** Support for Urdu and regional languages via Whisper translation.
 - **n8n Webhook Automations:** Automated email and WhatsApp notifications for booking confirmations.
-- **Comprehensive Documentation:** Detailed system architecture diagrams and database schema references.
+- **Maid App Interface:** Dedicated UI for maids to manage schedules and bids.
 
 ---
 

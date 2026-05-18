@@ -93,6 +93,9 @@ export const getHomeownerBookings = (sessionId) =>
 export const transcribeAudio = (audioBase64) =>
   client.post('/api/voice/transcribe', { audio: audioBase64 }).then(r => r.data);
 
+export const transcribeAndParse = (audioBase64, mimeType = 'audio/m4a', sessionId = null) =>
+  client.post('/api/voice/transcribe-and-parse', { audio: audioBase64, mimeType, sessionId }).then(r => r.data);
+
 export const extractIntent = (transcript) =>
   client.post('/api/voice/extract-intent', { transcript }).then(r => r.data);
 

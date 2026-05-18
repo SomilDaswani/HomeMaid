@@ -14,6 +14,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.homemaid.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "HomeMaid ko awaz sunne ki permission chahiye taake aap apni request bol sakein."
+      },
       "config": {
         "googleMapsApiKey": "AIzaSyDuaZpBYJMCwElZVRO9wgLw6YbJFikW0lI"
       }
@@ -24,6 +27,7 @@
         "backgroundColor": "#FAF6F0"
       },
       "package": "com.homemaid.app",
+      "permissions": ["RECORD_AUDIO"],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDuaZpBYJMCwElZVRO9wgLw6YbJFikW0lI"
@@ -38,6 +42,18 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "HomeMaid uses your location to find nearby maids."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "HomeMaid ko awaz sunne ki permission chahiye taake aap apni request bol sakein."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#8B5CF6"
         }
       ],
       "expo-secure-store"

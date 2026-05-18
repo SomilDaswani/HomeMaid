@@ -2,10 +2,23 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../lib/supabase');
 const { isValidTransition } = require('../lib/stateValidation');
+const { getMedian } = require('../lib/marketCache');
+
+// ── Roman Urdu bid messages ──────────────────────────────────────────────────
+function generateBidMessage(maid) {
+  const templates = [
+    `Mera ${maid.jobs_completed || 0} jobs ka tajurba hai. Abhi aa sakti hoon.`,
+    `${maid.avg_rating || 4.0} star rating hai meri. Behtareen kaam karti hoon.`,
+    `Seedha aap ke ghar pohonch jaungi, koi fikar nahi.`,
+    `Main ${maid.area_label || 'nazdeek'} se hoon. Jaldi pohonch sakti hoon.`,
+    `${maid.total_reviews || 0} logon ne mujhe review diya hai, sab khush hain.`,
+  ];
+  return templates[Math.floor(Math.random() * templates.length)];
+}
 
 /**
  * POST /api/quick-service/request
- * Creates a new QS request. timeout_at = now + 90s (enforced by pg_cron).
+ * Creates a new QS request. timeout_at = now + 90s.
  */
 router.post('/request', async (req, res) => {
   try {
@@ -57,22 +70,40 @@ router.post('/request', async (req, res) => {
 
 /**
  * GET /api/quick-service/:id/bids
- * Returns all bids for a request (sorted by price ascending).
+ * Returns all NON-EXPIRED bids for a request (sorted by price ascending).
  */
 router.get('/:id/bids', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('bids')
       .select(`
-        id, offered_price, status, created_at,
-        maids ( id, name, avg_rating, total_reviews, area_label, skill_level )
+        id, offered_price, status, created_at, expires_at, eta_minutes, bid_message,
+        maids ( id, name, phone, avg_rating, total_reviews, area_label, skill_level, jobs_completed )
       `)
       .eq('request_id', req.params.id)
+      .in('status', ['pending', 'accepted'])
       .order('offered_price', { ascending: true });
 
     if (error) throw error;
 
-    return res.json({ bids: data || [] });
+    // Filter out expired bids
+    const now = new Date();
+    const activeBids = (data || []).filter(bid => {
+      if (!bid.expires_at) return true;
+      return new Date(bid.expires_at) > now;
+    });
+
+    // Tag "best value" bid
+    const bestValue = activeBids.find(b =>
+      b.status === 'pending' && (b.maids?.avg_rating || 0) >= 4.0
+    );
+
+    return res.json({
+      bids: activeBids.map(b => ({
+        ...b,
+        is_best_value: bestValue && b.id === bestValue.id,
+      })),
+    });
   } catch (err) {
     console.error('[GET /quick-service/:id/bids]', err.message);
     return res.status(500).json({ error: 'SERVER_ERROR' });
@@ -81,12 +112,12 @@ router.get('/:id/bids', async (req, res) => {
 
 /**
  * POST /api/quick-service/:id/mock-bid
- * Demo only: inserts a fake bid from a random nearby maid.
- * Used by the client's staggered mock-bid timer.
+ * Demo: inserts a realistic bid from a random nearby maid.
+ * Price anchored to the request's estimated price (85%-115% range).
  */
 router.post('/:id/mock-bid', async (req, res) => {
   try {
-    // Find the request to get location
+    // Find the request
     const { data: request, error: reqErr } = await supabase
       .from('quick_service_requests')
       .select('*')
@@ -111,11 +142,14 @@ router.post('/:id/mock-bid', async (req, res) => {
 
     let maidQuery = supabase
       .from('maids')
-      .select('id, rate_min, rate_max')
+      .select('id, name, phone, avg_rating, total_reviews, area_label, skill_level, jobs_completed, base_rate, rate_min, rate_max')
       .eq('is_online', true)
       .eq('status', 'active')
-      .is('active_qs_request_id', null)
-      .contains('service_types', request.service_types);
+      .is('active_qs_request_id', null);
+
+    if (request.service_types?.length) {
+      maidQuery = maidQuery.contains('service_types', request.service_types);
+    }
 
     if (alreadyBidMaidIds.length > 0) {
       maidQuery = maidQuery.not('id', 'in', `(${alreadyBidMaidIds.join(',')})`);
@@ -128,9 +162,19 @@ router.post('/:id/mock-bid', async (req, res) => {
     }
 
     const maid = maids[Math.floor(Math.random() * maids.length)];
-    const min = maid.rate_min || request.price_min || 800;
-    const max = maid.rate_max || request.price_max || 1500;
-    const offeredPrice = Math.floor(Math.random() * (max - min + 1)) + min;
+
+    // Anchor bid price to the request's estimated price (85%–115%)
+    const anchorPrice = request.estimated_price || request.price_min || 500;
+    const offeredPrice = Math.round(anchorPrice * (0.85 + Math.random() * 0.30));
+
+    // Random ETA
+    const etaMinutes = Math.floor(10 + Math.random() * 20);
+
+    // Expiry in 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    // Roman Urdu bid message using real maid stats
+    const bidMessage = generateBidMessage(maid);
 
     const { data: bid, error: bidErr } = await supabase
       .from('bids')
@@ -138,11 +182,14 @@ router.post('/:id/mock-bid', async (req, res) => {
         request_id:    req.params.id,
         maid_id:       maid.id,
         offered_price: offeredPrice,
+        eta_minutes:   etaMinutes,
+        expires_at:    expiresAt,
+        bid_message:   bidMessage,
         status:        'pending',
       })
       .select(`
-        id, offered_price, status, created_at,
-        maids ( id, name, avg_rating, total_reviews, area_label, skill_level )
+        id, offered_price, status, created_at, expires_at, eta_minutes, bid_message,
+        maids ( id, name, phone, avg_rating, total_reviews, area_label, skill_level, jobs_completed )
       `)
       .single();
 
@@ -183,6 +230,57 @@ router.post('/:id/select-bid', async (req, res) => {
       return res.status(statusMap[data.error] || 400).json(data);
     }
 
+    // ── Create a booking record so it appears in BookingsListScreen ───────
+    const sessionId = req.headers['x-session-id'] || null;
+    try {
+      // Fetch the full request to get details
+      const { data: qsReq } = await supabase
+        .from('quick_service_requests')
+        .select('*')
+        .eq('id', req.params.id)
+        .single();
+
+      // Fetch the bid to get offered_price and maid_id
+      const { data: bidData } = await supabase
+        .from('bids')
+        .select('offered_price, maid_id, eta_minutes')
+        .eq('id', bid_id)
+        .single();
+
+      if (qsReq && bidData) {
+        const now = new Date();
+        await supabase.from('bookings').insert({
+          session_id:      sessionId || qsReq.session_id,
+          maid_id:         bidData.maid_id,
+          service_types:   qsReq.service_types || [],
+          complexity:      qsReq.complexity || 'simple',
+          tasks:           qsReq.tasks || [],
+          scheduled_date:  now.toISOString().split('T')[0],
+          scheduled_start: now.toTimeString().slice(0, 5),
+          scheduled_end:   new Date(now.getTime() + 2 * 60 * 60 * 1000).toTimeString().slice(0, 5),
+          total_price:     bidData.offered_price,
+          agreed_price:    bidData.offered_price,
+          status:          'confirmed',
+          source:          'quick_service',
+          qs_request_id:   req.params.id,
+        });
+      }
+    } catch (bookingErr) {
+      console.error('[QS] Booking record creation failed (non-fatal):', bookingErr.message);
+    }
+
+    // Log a simulated notification trace
+    supabase.from('agent_traces').insert({
+      session_id:     sessionId,
+      session_type:   'quick_service',
+      agent_name:     'NotificationAgent',
+      input_summary:  `Bid selected: ${bid_id}`,
+      output_summary: `SMS simulated: "HomeMaid: Aap ki request accept ho gayi!"`,
+      full_input:     { bid_id, request_id: req.params.id },
+      full_output:    { channel: 'sms_simulated', delivered: true, maid_id: data.maid_id, price: data.price },
+      duration_ms:    0,
+    }).then(() => {}).catch(() => {});
+
     return res.json(data);
   } catch (err) {
     console.error('[POST /quick-service/:id/select-bid]', err.message);
@@ -192,7 +290,6 @@ router.post('/:id/select-bid', async (req, res) => {
 
 /**
  * PATCH /api/quick-service/:id/status
- * State-machine-enforced status transition.
  */
 router.patch('/:id/status', async (req, res) => {
   try {
@@ -254,7 +351,6 @@ router.patch('/:id/status', async (req, res) => {
 
 /**
  * POST /api/quick-service/:id/cancel
- * Cancels from pending_bids only (state machine enforced via status PATCH).
  */
 router.post('/:id/cancel', async (req, res) => {
   return router.handle(
@@ -265,7 +361,6 @@ router.post('/:id/cancel', async (req, res) => {
 
 /**
  * POST /api/quick-service/:id/timeout
- * Client-calls this when its 90s countdown hits 0 (Vercel serverless fallback).
  */
 router.post('/:id/timeout', async (req, res) => {
   try {
@@ -283,7 +378,7 @@ router.post('/:id/timeout', async (req, res) => {
       .from('quick_service_requests')
       .update({ status: 'timed_out', updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
-      .eq('status', 'pending_bids');  // safe: only if still pending
+      .eq('status', 'pending_bids');
 
     return res.json({ ok: true });
   } catch (err) {

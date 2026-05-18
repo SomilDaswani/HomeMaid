@@ -3,17 +3,16 @@ const router = express.Router();
 const { getMedian } = require('../lib/marketCache');
 const supabase = require('../lib/supabase');
 
+// ── Price floors and ceilings (PKR) ──────────────────────────────────────────
+const PRICE_FLOORS   = { cleaning: 300, laundry: 250, cooking: 400, washing_dishes: 150, cleaning_washroom: 200, ironing_clothes: 200 };
+const PRICE_CEILINGS = { cleaning: 2500, laundry: 1800, cooking: 3000, washing_dishes: 800, cleaning_washroom: 1200, ironing_clothes: 1000 };
+const MAX_TOTAL_MULTIPLIER = 2.5;
+
+console.log('[PRICING] Module loaded. Floors:', PRICE_FLOORS, 'Ceilings:', PRICE_CEILINGS, 'MaxMul:', MAX_TOTAL_MULTIPLIER);
+
 /**
  * POST /api/pricing/calculate
  * Calculates a price with all 6 multipliers and returns full breakdown.
- *
- * Body: {
- *   service_types: string[],
- *   complexity: { rooms?, tasks?, duration_hours?, level? },
- *   scheduled_date?: "YYYY-MM-DD",
- *   scheduled_start?: "HH:MM",
- *   lat?: number, lng?: number
- * }
  */
 router.post('/calculate', async (req, res) => {
   try {
@@ -29,6 +28,8 @@ router.post('/calculate', async (req, res) => {
     if (!service_types.length) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'service_types is required' });
     }
+
+    const primaryService = service_types[0];
 
     // ── 1. Base rate from market median ───────────────────────────────────────
     let baseHourlyRate = 0;
@@ -67,7 +68,7 @@ router.post('/calculate', async (req, res) => {
     let weekendMul = 1.0;
     let dayLabel = 'weekday';
     if (scheduled_date) {
-      const dayOfWeek = new Date(scheduled_date).getDay(); // 0=Sun, 6=Sat
+      const dayOfWeek = new Date(scheduled_date).getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) {
         weekendMul = 1.15;
         dayLabel = dayOfWeek === 0 ? 'sunday' : 'saturday';
@@ -100,21 +101,34 @@ router.post('/calculate', async (req, res) => {
     // ── 9. Distance surcharge (no specific maid yet) ─────────────────────────
     const distanceSurcharge = 0;
 
-    // ── 10. Final calculation ────────────────────────────────────────────────
-    // formula: (subtotal + tasksExtra) × complexity × time × weekend × demand × experience + distance
-    const base = subtotal + tasksExtra;
-    const recommendedPrice = Math.round(
-      base * complexityMul * timeOfDayMul * weekendMul * demandMul * experienceMul + distanceSurcharge
-    );
+    // ── 10. Total multiplier with cap ────────────────────────────────────────
+    const rawMultiplier = complexityMul * timeOfDayMul * weekendMul * demandMul * experienceMul;
+    const cappedMultiplier = Math.min(MAX_TOTAL_MULTIPLIER, rawMultiplier);
 
-    // Real min/max from multiplier extremes (experience varies 0.95–1.10)
-    const priceMin = Math.round((base * complexityMul * timeOfDayMul * weekendMul * demandMul * 0.95) / 50) * 50;
-    const priceMax = Math.round((base * complexityMul * timeOfDayMul * weekendMul * demandMul * 1.10 + 200) / 50) * 50;
+    // ── 11. Final calculation with floor/ceiling ─────────────────────────────
+    const base = subtotal + tasksExtra;
+    let recommendedPrice = Math.round(base * cappedMultiplier + distanceSurcharge);
+
+    // Apply floor and ceiling
+    const floor = PRICE_FLOORS[primaryService] || 250;
+    const ceiling = PRICE_CEILINGS[primaryService] || 3000;
+    recommendedPrice = Math.max(floor, Math.min(ceiling, recommendedPrice));
+
+    // Min/max range (experience varies 0.95–1.10 for different maids)
+    let priceMin = Math.round((base * cappedMultiplier * 0.85) / 50) * 50;
+    let priceMax = Math.round((base * cappedMultiplier * 1.15 + 150) / 50) * 50;
+    priceMin = Math.max(floor, priceMin);
+    priceMax = Math.min(ceiling, priceMax);
+
+    // Ensure min < recommended < max
+    if (priceMin > recommendedPrice) priceMin = recommendedPrice;
+    if (priceMax < recommendedPrice) priceMax = recommendedPrice;
 
     return res.json({
       recommended_price: recommendedPrice,
       price_min: priceMin,
       price_max: priceMax,
+      _version: 'v2-with-caps',
       breakdown: {
         market_base_rate:       baseHourlyRate,
         estimated_hours:        parseFloat(durationHours.toFixed(1)),
@@ -130,6 +144,10 @@ router.post('/calculate', async (req, res) => {
         active_requests_nearby: activeRequests,
         experience_premium:     experienceMul,
         distance_surcharge:     distanceSurcharge,
+        total_multiplier:       parseFloat(cappedMultiplier.toFixed(2)),
+        multiplier_capped:      rawMultiplier > MAX_TOTAL_MULTIPLIER,
+        price_floor:            floor,
+        price_ceiling:          ceiling,
       },
     });
   } catch (err) {

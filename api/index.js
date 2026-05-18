@@ -2,10 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const { resetCache, refreshCache } = require('./lib/marketCache');
+
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -22,7 +24,14 @@ app.use('/api/traces',         require('./routes/traces'));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
+  res.json({ ok: true, ts: new Date().toISOString(), version: 'v2-with-caps' });
+});
+
+// ─── Admin: force reset market cache ──────────────────────────────────────────
+app.post('/api/admin/reset-cache', async (req, res) => {
+  resetCache();
+  await refreshCache();
+  res.json({ message: 'Market cache reset and refreshed from DB.' });
 });
 
 // ─── 404 fallback ─────────────────────────────────────────────────────────────
@@ -38,8 +47,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`HomeMaid API running on port ${PORT}`);
+  // Force-refresh market cache from DB on startup
+  resetCache();
+  await refreshCache();
+  console.log('[STARTUP] Market cache refreshed from DB');
 });
 
 module.exports = app; // required for Vercel serverless export

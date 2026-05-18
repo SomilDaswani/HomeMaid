@@ -8,13 +8,16 @@ import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import VoiceButton from '../components/VoiceButton';
-import { calculatePrice, rankMaids, createBooking, extractIntent } from '../services/api';
+import { calculatePrice, rankMaids, createBooking } from '../services/api';
 import { getOrCreateSession } from '../services/session';
 
 const SERVICE_TYPES = [
-  { id: 'cleaning',  label: 'Safai',   icon: '🧹' },
-  { id: 'laundry',   label: 'Dhulai',  icon: '👕' },
-  { id: 'cooking',   label: 'Khana',   icon: '🍳' },
+  { id: 'cleaning',          label: 'Safai',     icon: '🧹' },
+  { id: 'laundry',           label: 'Dhulai',    icon: '👕' },
+  { id: 'cooking',           label: 'Khana',     icon: '🍳' },
+  { id: 'washing_dishes',    label: 'Bartan',    icon: '🍽️' },
+  { id: 'cleaning_washroom', label: 'Washroom',  icon: '🚿' },
+  { id: 'ironing_clothes',   label: 'Istri',     icon: '👔' },
 ];
 
 // ── Simple date helpers ──────────────────────────────────────────────────────
@@ -109,16 +112,10 @@ export default function BookingScreen({ navigation }) {
       .catch(() => {});
   }, [serviceType, startHour, endHour, date]);
 
-  // Handle voice transcript → intent → auto-fill
-  const handleTranscript = async (text) => {
-    setIntentLoading(true);
-    try {
-      const result = await extractIntent(text);
-      if (result?.intent?.service_type) {
-        setServiceType(result.intent.service_type);
-      }
-    } catch {}
-    setIntentLoading(false);
+  // Handle parsed intent from VoiceButton
+  const handleIntentParsed = (data) => {
+    const intent = data?.intent;
+    if (intent?.service_type) setServiceType(intent.service_type);
   };
 
   // Validate slot before submitting
@@ -235,7 +232,7 @@ export default function BookingScreen({ navigation }) {
             {/* Voice input */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Bolen ya likhein</Text>
-              <VoiceButton onTranscript={handleTranscript} onProcessing={setIntentLoading} />
+              <VoiceButton onIntentParsed={handleIntentParsed} onProcessing={setIntentLoading} />
               {intentLoading && (
                 <View style={styles.row}>
                   <ActivityIndicator size="small" color={Colors.primary} />

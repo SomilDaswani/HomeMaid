@@ -15,6 +15,7 @@ import { FontFamily, FontSize } from './src/constants/typography';
 import { Spacing, Layout } from './src/constants/spacing';
 import { Strings } from './src/constants/strings';
 import { getOrCreateSession } from './src/services/session';
+import { requestNotificationPermission } from './src/lib/notifications';
 
 // Screens
 import RoleSelectScreen from './src/screens/RoleSelectScreen';
@@ -150,8 +151,9 @@ export default function App() {
   });
 
   useEffect(() => {
-    // Initialize session on app start
+    // Initialize session and request notification permissions on app start
     getOrCreateSession().catch(() => {});
+    requestNotificationPermission().catch(() => {});
   }, []);
 
   useEffect(() => {

@@ -38,14 +38,14 @@ function BookingCard({ booking, onPress }) {
 
       {/* Maid name row */}
       <Text style={styles.maidName}>
-        🧹 {booking.maid?.name || 'Maid'}
+        🧹 {booking.maids?.name || booking.maid?.name || 'Maid'}
       </Text>
 
       {/* Date + price row */}
       <View style={styles.cardBottom}>
         <Text style={styles.dateText}>{dateStr}</Text>
-        {booking.agreed_price != null && (
-          <Text style={styles.priceText}>Rs. {booking.agreed_price.toLocaleString()}</Text>
+        {(booking.agreed_price != null || booking.total_price != null) && (
+          <Text style={styles.priceText}>Rs. {(booking.agreed_price || booking.total_price).toLocaleString()}</Text>
         )}
       </View>
     </TouchableOpacity>

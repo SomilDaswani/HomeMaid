@@ -1,195 +1,289 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, TextInput,
+  View, Text, TouchableOpacity, StyleSheet, TextInput,
+  ActivityIndicator, Animated, Platform, Alert,
 } from 'react-native';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
-import {
-  requestMicPermission, startRecording, stopRecording,
-} from '../services/voice';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 /**
- * VoiceButton — always shows a text input for Roman Urdu / English service requests.
- * If mic permission is granted, also shows a mic button for recording (animations work
- * but STT is not available — stopping auto-focuses text box so user types).
- *
- * Props:
- *   onTranscript(text)  — called with the typed/submitted text
- *   onProcessing(bool)  — called when processing starts/ends
- *   disabled            — disables all interaction
+ * Expo Recording options.
+ * iOS: Must use numeric constants for outputFormat, NOT string names.
+ * Audio.RecordingOptionsPresets.HIGH_QUALITY uses these internally.
+ * We override to get 16kHz mono for smaller uploads + Whisper compatibility.
  */
-export default function VoiceButton({ onTranscript, onProcessing, disabled }) {
-  const [textInput, setTextInput]     = useState('');
-  const [recording, setRecording]     = useState(false);
-  const [permGranted, setPermGranted] = useState(false);
+const RECORDING_OPTIONS = {
+  isMeteringEnabled: false,
+  android: {
+    extension: '.m4a',
+    outputFormat: 2, // MediaRecorder.OutputFormat.MPEG_4
+    audioEncoder: 3, // MediaRecorder.AudioEncoder.AAC
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: '.m4a',
+    outputFormat: Audio.IOSOutputFormat?.MPEG4AAC ?? 'aac',
+    audioQuality: Audio.IOSAudioQuality?.MAX ?? 127,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 128000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {},
+};
 
-  const pulse    = useRef(new Animated.Value(1)).current;
-  const pulseAnim = useRef(null);
-  const inputRef  = useRef(null);
-
-  useEffect(() => {
-    requestMicPermission().then(setPermGranted);
-  }, []);
+export default function VoiceButton({ onIntentParsed, onProcessing, sessionId }) {
+  const [recording, setRecording] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [showTextFallback, setShowTextFallback] = useState(false);
+  const [textInput, setTextInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const recordingRef = useRef(null);
 
   // Pulse animation while recording
   useEffect(() => {
-    if (recording) {
-      pulseAnim.current = Animated.loop(
+    if (isRecording) {
+      Animated.loop(
         Animated.sequence([
-          Animated.timing(pulse, { toValue: 1.18, duration: 550, useNativeDriver: true }),
-          Animated.timing(pulse, { toValue: 1,    duration: 550, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.2, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
         ])
-      );
-      pulseAnim.current.start();
+      ).start();
     } else {
-      pulseAnim.current?.stop();
-      pulse.setValue(1);
+      pulseAnim.setValue(1);
     }
-  }, [recording]);
+  }, [isRecording]);
 
-  const handleMic = async () => {
-    if (disabled) return;
-    if (!recording) {
-      try {
-        await startRecording();
-        setRecording(true);
-      } catch {
-        // mic unavailable — just focus text box
-        inputRef.current?.focus();
+  const startRecording = async () => {
+    try {
+      setErrorMsg(null);
+      setShowTextFallback(false);
+
+      // 1. Request mic permission FIRST
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Microphone Permission',
+          'Awaz record karne ke liye microphone permission chahiye.',
+          [{ text: 'OK' }]
+        );
+        setShowTextFallback(true);
+        return;
       }
-    } else {
-      setRecording(false);
-      await stopRecording(); // audio discarded — no STT available
-      // Focus text box so user types what they said
-      inputRef.current?.focus();
+
+      // 2. Configure audio session BEFORE preparing recording
+      // This is the root cause of iOS error 1718449215 —
+      // audio mode must be set to recording before createAsync
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+
+      // 3. Now create the recording
+      const { recording: rec } = await Audio.Recording.createAsync(RECORDING_OPTIONS);
+      recordingRef.current = rec;
+      setRecording(rec);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('[VOICE] Start recording failed:', err);
+      setErrorMsg('Recording nahi ho saki. Likhein please.');
+      setShowTextFallback(true);
+
+      // Reset audio mode on failure
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
     }
   };
 
-  const handleSubmit = () => {
-    const text = textInput.trim();
-    if (!text) return;
+  const stopAndProcess = async () => {
+    if (!recordingRef.current) return;
+
+    setIsRecording(false);
+    setProcessing(true);
     onProcessing?.(true);
-    onTranscript?.(text);
-    setTextInput('');
-    // onProcessing(false) is called by parent after extractIntent resolves
+
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+      setRecording(null);
+
+      // Reset audio mode back to playback after recording stops
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      if (!uri) throw new Error('No recording URI');
+
+      // Read audio file as base64
+      const base64Audio = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // POST to backend
+      const response = await fetch(`${API_URL}/api/voice/transcribe-and-parse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionId ? { 'x-session-id': sessionId } : {}),
+        },
+        body: JSON.stringify({
+          audio: base64Audio,
+          mimeType: 'audio/m4a',
+          sessionId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.intent) {
+        onIntentParsed?.(data);
+      } else {
+        setErrorMsg(data.message || 'Awaz nahi samajh ayi, likhain please.');
+        setShowTextFallback(true);
+      }
+    } catch (err) {
+      console.error('[VOICE] Process failed:', err);
+      setErrorMsg('Awaz nahi samajh ayi, likhain please.');
+      setShowTextFallback(true);
+
+      // Ensure audio mode is reset even on error
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+    } finally {
+      setProcessing(false);
+      onProcessing?.(false);
+    }
   };
+
+  const handleTextSubmit = async () => {
+    if (!textInput.trim()) return;
+    setProcessing(true);
+    onProcessing?.(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/voice/extract-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionId ? { 'x-session-id': sessionId } : {}),
+        },
+        body: JSON.stringify({ transcript: textInput.trim() }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.intent) {
+        onIntentParsed?.(data);
+        setTextInput('');
+        setShowTextFallback(false);
+      } else {
+        setErrorMsg('Samajh nahi aaya. Dobara likhein.');
+      }
+    } catch {
+      setErrorMsg('Network error. Dobara try karein.');
+    } finally {
+      setProcessing(false);
+      onProcessing?.(false);
+    }
+  };
+
+  if (processing) {
+    return (
+      <View style={st.container}>
+        <View style={st.processingBox}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={st.processingTxt}>Samajh raha hoon...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-
-      {/* Always-visible text input */}
-      <View style={styles.inputBox}>
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          value={textInput}
-          onChangeText={setTextInput}
-          placeholder={"Likhein: 'Kal subah 2 kamre saaf karwane hain DHA mein...'"}
-          placeholderTextColor={Colors.textMuted}
-          multiline
-          editable={!disabled}
-          returnKeyType="done"
-        />
-      </View>
-
-      {/* Action row: mic + process button */}
-      <View style={styles.actionRow}>
-
-        {/* Mic button — shows if permission granted */}
-        {permGranted && (
-          <Animated.View style={{ transform: [{ scale: pulse }] }}>
-            <TouchableOpacity
-              style={[styles.micBtn, recording && styles.micBtnActive]}
-              onPress={handleMic}
-              disabled={disabled}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.micIcon}>{recording ? '⏹' : '🎙'}</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* Process button */}
+    <View style={st.container}>
+      {/* Main mic button */}
+      <Animated.View style={[st.micWrap, { transform: [{ scale: pulseAnim }] }]}>
         <TouchableOpacity
-          style={[styles.submitBtn, (!textInput.trim() || disabled) && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={!textInput.trim() || disabled}
+          style={[st.micBtn, isRecording && st.micBtnActive]}
+          onPressIn={startRecording}
+          onPressOut={stopAndProcess}
           activeOpacity={0.85}
         >
-          <Text style={styles.submitText}>
-            {recording ? '⏺ Ruk ke likhein →' : 'Process →'}
-          </Text>
+          <Text style={st.micIcon}>{isRecording ? '⏹' : '🎙️'}</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
+      <Text style={st.hint}>
+        {isRecording ? 'Bol rahe hain... Chhorein jab ho jaye' : 'Dabayein aur bolein'}
+      </Text>
 
-      {recording && (
-        <Text style={styles.recordingNote}>
-          🔴 Recording... ruk ke text box mein likhein aur Process dabayein
-        </Text>
+      {/* Error message */}
+      {errorMsg && <Text style={st.errorTxt}>{errorMsg}</Text>}
+
+      {/* Text fallback */}
+      {showTextFallback && (
+        <View style={st.textFallback}>
+          <TextInput
+            style={st.textInput}
+            placeholder="Yahan likhein... e.g. Kal subah safai chahiye DHA mein"
+            placeholderTextColor={Colors.textMuted}
+            value={textInput}
+            onChangeText={setTextInput}
+            multiline
+          />
+          <TouchableOpacity style={st.sendBtn} onPress={handleTextSubmit} disabled={!textInput.trim()}>
+            <Text style={st.sendTxt}>Bhejein →</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Always show text option */}
+      {!showTextFallback && (
+        <TouchableOpacity onPress={() => setShowTextFallback(true)} style={st.textToggle}>
+          <Text style={st.textToggleTxt}>⌨️ Likhna chahte hain?</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: Spacing.sm,
-  },
-  inputBox: {
-    backgroundColor: Colors.surface,
-    borderRadius: Layout.borderRadius.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    ...CardShadow,
-  },
-  input: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    minHeight: 72,
-    textAlignVertical: 'top',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
+const st = StyleSheet.create({
+  container: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
+  micWrap: {},
   micBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
     ...CardShadow,
   },
-  micBtnActive: {
-    backgroundColor: Colors.error,
+  micBtnActive: { backgroundColor: Colors.error },
+  micIcon: { fontSize: 32 },
+  hint: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textMuted },
+  errorTxt: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.error, textAlign: 'center', paddingHorizontal: Spacing.md },
+  processingBox: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.lg },
+  processingTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: Colors.primary },
+  textFallback: { width: '100%', paddingHorizontal: Spacing.md, gap: Spacing.sm },
+  textInput: {
+    backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md,
+    borderWidth: 1.5, borderColor: Colors.border, padding: Spacing.sm,
+    fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textPrimary,
+    minHeight: 60, textAlignVertical: 'top',
   },
-  micIcon: { fontSize: 22 },
-  submitBtn: {
-    flex: 1,
-    backgroundColor: Colors.accent,
-    borderRadius: Layout.borderRadius.md,
-    paddingVertical: Spacing.sm + 4,
-    alignItems: 'center',
-    ...CardShadow,
+  sendBtn: {
+    backgroundColor: Colors.accent, borderRadius: Layout.borderRadius.md,
+    paddingVertical: Spacing.sm, alignItems: 'center', ...CardShadow,
   },
-  submitBtnDisabled: {
-    opacity: 0.45,
-  },
-  submitText: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: FontSize.md,
-    color: Colors.surface,
-  },
-  recordingNote: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.xs,
-    color: Colors.error,
-    textAlign: 'center',
-  },
+  sendTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: Colors.surface },
+  textToggle: { paddingVertical: 4 },
+  textToggleTxt: { fontFamily: FontFamily.medium, fontSize: FontSize.xs, color: Colors.primary },
 });
