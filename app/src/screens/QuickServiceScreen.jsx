@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import * as Location from 'expo-location';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, SafeAreaView, StatusBar,
+  ActivityIndicator, SafeAreaView, StatusBar, TextInput,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
@@ -10,6 +11,7 @@ import { Strings } from '../constants/strings';
 import VoiceButton from '../components/VoiceButton';
 import { calculatePrice, createQuickServiceRequest } from '../services/api';
 import { getOrCreateSession } from '../services/session';
+import * as Haptics from 'expo-haptics';
 
 const SERVICE_TYPES = [
   { id: 'cleaning',          label: 'Safai',           icon: '🧹' },
@@ -58,10 +60,51 @@ export default function QuickServiceScreen({ navigation, route }) {
   const [durationHours, setDurationHours] = useState(prefill.duration_hours || 2);
 
   // Intent confirmation state
-  const [parsedIntent, setParsedIntent] = useState(null);
+  const [parsedIntent, setParsedIntent]       = useState(null);
   const [intentConfirmed, setIntentConfirmed] = useState(false);
   const [clarifyQuestion, setClarifyQuestion] = useState(null);
-  const [transcript, setTranscript] = useState(null);
+  const [transcript, setTranscript]           = useState(null);
+  const [clarificationAnswer, setClarificationAnswer] = useState('');
+  const [originalInput, setOriginalInput]     = useState('');
+  const [clarificationLoading, setClarificationLoading] = useState(false);
+
+  const [userLocation, setUserLocation] = useState(null);
+  const [userAddress, setUserAddress] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        
+        const location = await Location.getCurrentPositionAsync({});
+        setUserLocation({
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+        });
+        
+        const [address] = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+        
+        console.log('[GPS] Full address object:', JSON.stringify(address));
+        
+        // Priority: most specific to least specific
+        const area = address?.district ||
+                     address?.subregion ||
+                     address?.neighborhood ||
+                     address?.street ||
+                     address?.city ||
+                     'Karachi';
+        
+        console.log('[GPS] Selected area:', area);
+        setUserAddress(area);
+      } catch (err) {
+        console.warn('[GPS] Location error:', err.message);
+      }
+    })();
+  }, []);
 
   useEffect(() => { getOrCreateSession().then(setSessionId).catch(() => {}); }, []);
 
@@ -90,8 +133,10 @@ export default function QuickServiceScreen({ navigation, route }) {
   const handleIntentParsed = (data) => {
     const intent = data.intent;
     setTranscript(data.transcript || null);
+    setOriginalInput(data.transcript || '');
     setParsedIntent(intent);
     setIntentConfirmed(false);
+    setClarificationAnswer('');
 
     if (data.needs_clarification && data.clarifying_question) {
       setClarifyQuestion(data.clarifying_question);
@@ -99,16 +144,65 @@ export default function QuickServiceScreen({ navigation, route }) {
       setClarifyQuestion(null);
     }
 
-    // Pre-fill form but don't confirm yet
+    // Pre-fill form fields from intent
     if (intent.service_type) setServiceType(intent.service_type);
     if (intent.rooms) setRooms(intent.rooms);
     if (intent.duration_hours) setDurationHours(intent.duration_hours);
     fetchPrice(intent.service_type || serviceType, intent.rooms || rooms, intent.duration_hours || durationHours);
   };
 
-  const confirmIntent = () => {
-    setIntentConfirmed(true);
-    setClarifyQuestion(null);
+  // Bug 2: Re-run intent extraction with the clarification answer merged in
+  const handleClarificationSubmit = async () => {
+    if (!clarificationAnswer.trim()) return;
+    setClarificationLoading(true);
+    const enriched = `${originalInput}. ${clarificationAnswer.trim()}`;
+    setClarificationAnswer('');
+    setOriginalInput(enriched);
+    setIntentProcessing(true);
+    try {
+      // Re-use the voice route's text path via the API service
+      const { parseTextIntent } = require('../services/api');
+      const result = await parseTextIntent(enriched, sessionId, userAddress);
+      handleIntentParsed(result);
+    } catch {
+      // fallback: clear clarification so user can try again
+      setClarifyQuestion(null);
+    } finally {
+      setIntentProcessing(false);
+      setClarificationLoading(false);
+    }
+  };
+
+  // Bug 1 fix: "Theek hai" now directly creates the QS request and navigates
+  const handleConfirmIntent = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSubmitting(true);
+    try {
+      const sid = sessionId || await getOrCreateSession();
+      const request = await createQuickServiceRequest({
+        session_id:     sid,
+        service_types:  [parsedIntent?.service_type || serviceType],
+        complexity:     parsedIntent?.complexity || 'simple',
+        tasks:          selectedTasks,
+        lat:            userLocation?.lat || 24.8650,
+        lng:            userLocation?.lng || 67.0650,
+        area_label:     parsedIntent?.area || userAddress || 'Karachi',
+        full_address:   parsedIntent?.full_address || null,
+        price_min:      priceData?.price_min || 300,
+        price_max:      priceData?.price_max || 1200,
+        estimated_price: priceData?.recommended_price || 500,
+      });
+      console.log('[THEEK_HAI] QS request created:', request?.id);
+      if (request?.id) {
+        navigation.replace('BidList', { request });
+      } else {
+        alert('Request submit nahi ho saki. Dobara try karein.');
+      }
+    } catch (err) {
+      console.error('[THEEK_HAI] Failed:', err.message);
+      alert('Server se connection nahi hua.');
+    }
+    setSubmitting(false);
   };
 
   const handleSubmit = async () => {
@@ -120,9 +214,10 @@ export default function QuickServiceScreen({ navigation, route }) {
         service_types: [serviceType],
         complexity: 'simple',
         tasks: selectedTasks,
-        lat: 24.8650,
-        lng: 67.0650,
-        area_label: parsedIntent?.area || 'Karachi',
+        lat: userLocation?.lat || 24.8650,
+        lng: userLocation?.lng || 67.0650,
+        area_label: parsedIntent?.area || userAddress || 'Karachi',
+        full_address: parsedIntent?.full_address || null,
         price_min: priceData?.price_min || 300,
         price_max: priceData?.price_max || 1200,
         estimated_price: priceData?.recommended_price || 500,
@@ -154,6 +249,7 @@ export default function QuickServiceScreen({ navigation, route }) {
             onIntentParsed={handleIntentParsed}
             onProcessing={setIntentProcessing}
             sessionId={sessionId}
+            gpsArea={userAddress}
           />
         </View>
 
@@ -174,12 +270,56 @@ export default function QuickServiceScreen({ navigation, route }) {
             {clarifyQuestion && (
               <View style={si.clarifyBox}>
                 <Text style={si.clarifyTxt}>🤖 {clarifyQuestion}</Text>
+                {/* Bug 2: inline answer input */}
+                {clarificationLoading ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                    <Text style={{ marginLeft: 8, color: Colors.textMuted }}>Samajh raha hoon...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <TextInput
+                      style={si.clarifyInput}
+                      placeholder="Yahan jawab likhein..."
+                      placeholderTextColor="#999"
+                      value={clarificationAnswer}
+                      onChangeText={setClarificationAnswer}
+                      returnKeyType="done"
+                      onSubmitEditing={handleClarificationSubmit}
+                    />
+                    <TouchableOpacity
+                      style={si.clarifySubmitBtn}
+                      onPress={handleClarificationSubmit}
+                      disabled={!clarificationAnswer.trim() || intentProcessing}
+                    >
+                      <Text style={si.clarifySubmitTxt}>Jawab Dein →</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             )}
             <View style={si.intentBtns}>
-              <TouchableOpacity style={si.confirmBtn} onPress={confirmIntent}>
-                <Text style={si.confirmTxt}>✓ Theek hai</Text>
-              </TouchableOpacity>
+              {parsedIntent && !parsedIntent.needs_clarification && parsedIntent.confidence >= 0.7 && (
+                <TouchableOpacity
+                  style={[si.theekHaiBtn, submitting && si.theekHaiBtnDisabled]}
+                  onPress={handleConfirmIntent}
+                  disabled={submitting}
+                  activeOpacity={0.85}
+                >
+                  {submitting ? (
+                    <View style={si.theekHaiBtnContent}>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={si.theekHaiBtnText}>Dhundh raha hoon...</Text>
+                    </View>
+                  ) : (
+                    <View style={si.theekHaiBtnContent}>
+                      <Text style={si.theekHaiBtnEmoji}>✓</Text>
+                      <Text style={si.theekHaiBtnText}>Theek hai, Maids Dhundho</Text>
+                      <Text style={si.theekHaiBtnArrow}>→</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={si.retryBtn} onPress={() => { setParsedIntent(null); setTranscript(null); }}>
                 <Text style={si.retryTxt}>↻ Dobara</Text>
               </TouchableOpacity>
@@ -235,6 +375,26 @@ export default function QuickServiceScreen({ navigation, route }) {
           : priceData ? (
             <>
               <Text style={st.priceLabel}>Takmini Qeemat</Text>
+              {/* Surge chips — visible when multipliers are active */}
+              {priceData.breakdown && (
+                <View style={st.surgeRow}>
+                  {priceData.breakdown.weekend_multiplier > 1 && (
+                    <View style={st.surgeChip}>
+                      <Text style={st.surgeChipTxt}>📅 Weekend +{Math.round((priceData.breakdown.weekend_multiplier - 1) * 100)}%</Text>
+                    </View>
+                  )}
+                  {priceData.breakdown.time_of_day_multiplier > 1 && (
+                    <View style={st.surgeChip}>
+                      <Text style={st.surgeChipTxt}>⏰ Rush Hour +{Math.round((priceData.breakdown.time_of_day_multiplier - 1) * 100)}%</Text>
+                    </View>
+                  )}
+                  {priceData.breakdown.demand_multiplier > 1 && (
+                    <View style={[st.surgeChip, st.surgeChipHot]}>
+                      <Text style={st.surgeChipTxt}>🔥 High Demand +{Math.round((priceData.breakdown.demand_multiplier - 1) * 100)}%</Text>
+                    </View>
+                  )}
+                </View>
+              )}
               <Text style={st.priceValue}>Rs. {priceData.recommended_price?.toLocaleString()}</Text>
               <Text style={st.priceRange}>Rs. {priceData.price_min?.toLocaleString()} – {priceData.price_max?.toLocaleString()}</Text>
               {priceData.breakdown && (
@@ -279,11 +439,50 @@ const si = StyleSheet.create({
   transcriptTxt: { fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textMuted, fontStyle: 'italic' },
   intentFields: { gap: 4 },
   fieldTxt: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textPrimary },
-  clarifyBox: { backgroundColor: `${Colors.primary}10`, borderRadius: Layout.borderRadius.md, padding: Spacing.sm, borderLeftWidth: 3, borderLeftColor: Colors.primary },
+  clarifyBox: { backgroundColor: `${Colors.primary}10`, borderRadius: Layout.borderRadius.md, padding: Spacing.sm, borderLeftWidth: 3, borderLeftColor: Colors.primary, gap: 8 },
   clarifyTxt: { fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textPrimary },
+  clarifyInput: { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.sm, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.sm, paddingVertical: 8, fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textPrimary },
+  clarifySubmitBtn: { backgroundColor: Colors.primary, borderRadius: Layout.borderRadius.sm, paddingVertical: 8, alignItems: 'center' },
+  clarifySubmitTxt: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.surface },
   intentBtns: { flexDirection: 'row', gap: Spacing.sm },
-  confirmBtn: { flex: 2, backgroundColor: Colors.success, borderRadius: Layout.borderRadius.md, paddingVertical: Spacing.sm, alignItems: 'center' },
-  confirmTxt: { fontFamily: FontFamily.bold, fontSize: FontSize.md, color: Colors.surface },
+  theekHaiBtn: {
+    flex: 2,
+    backgroundColor: '#2D6A4F',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    shadowColor: '#2D6A4F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  theekHaiBtnDisabled: {
+    backgroundColor: '#999',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  theekHaiBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  theekHaiBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: FontFamily.bold,
+    letterSpacing: 0.3,
+  },
+  theekHaiBtnEmoji: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+  },
+  theekHaiBtnArrow: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 18,
+  },
   retryBtn: { flex: 1, backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md, paddingVertical: Spacing.sm, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
   retryTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: Colors.textMuted },
 });
@@ -329,4 +528,8 @@ const st = StyleSheet.create({
   durationTxt: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textMuted },
   durationTxtActive: { color: Colors.primary, fontFamily: FontFamily.semiBold },
   durationNote: { fontFamily: FontFamily.regular, fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic' },
+  surgeRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 4 },
+  surgeChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fef3c7', borderRadius: Layout.borderRadius.sm, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#f59e0b' },
+  surgeChipHot: { backgroundColor: '#fee2e2', borderColor: '#ef4444' },
+  surgeChipTxt: { fontFamily: FontFamily.semiBold, fontSize: 11, color: '#92400e' },
 });

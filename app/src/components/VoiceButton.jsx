@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
@@ -41,15 +42,36 @@ const RECORDING_OPTIONS = {
   web: {},
 };
 
-export default function VoiceButton({ onIntentParsed, onProcessing, sessionId }) {
+export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, gpsArea }) {
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [showTextFallback, setShowTextFallback] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [errorMsg, setErrorMsg] = useState(null);
+  const [statusText, setStatusText] = useState('Awaz sun raha hoon...');
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const recordingRef = useRef(null);
+
+  const PROCESSING_MESSAGES = [
+    'Awaz sun raha hoon...',
+    'Urdu samajh raha hoon...',
+    'AI se intent nikal raha hoon...',
+    'Market rate check kar raha hoon...',
+    'Best maids dhundh raha hoon...',
+  ];
+
+  // Cycle status messages while processing
+  useEffect(() => {
+    if (!processing) return;
+    setStatusText(PROCESSING_MESSAGES[0]);
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % PROCESSING_MESSAGES.length;
+      setStatusText(PROCESSING_MESSAGES[i]);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [processing]);
 
   // Pulse animation while recording
   useEffect(() => {
@@ -93,6 +115,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId })
         playThroughEarpieceAndroid: false,
       });
 
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       // 3. Now create the recording
       const { recording: rec } = await Audio.Recording.createAsync(RECORDING_OPTIONS);
       recordingRef.current = rec;
@@ -114,6 +137,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId })
     setIsRecording(false);
     setProcessing(true);
     onProcessing?.(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
       await recordingRef.current.stopAndUnloadAsync();
@@ -145,6 +169,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId })
           audio: base64Audio,
           mimeType: 'audio/m4a',
           sessionId,
+          gps_area: gpsArea,
         }),
       });
 
@@ -181,7 +206,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId })
           'Content-Type': 'application/json',
           ...(sessionId ? { 'x-session-id': sessionId } : {}),
         },
-        body: JSON.stringify({ transcript: textInput.trim() }),
+        body: JSON.stringify({ transcript: textInput.trim(), gps_area: gpsArea }),
       });
 
       const data = await response.json();
@@ -205,7 +230,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId })
       <View style={st.container}>
         <View style={st.processingBox}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={st.processingTxt}>Samajh raha hoon...</Text>
+          <Text style={st.processingTxt}>{statusText}</Text>
         </View>
       </View>
     );

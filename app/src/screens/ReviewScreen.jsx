@@ -12,8 +12,10 @@ import { getOrCreateSession } from '../services/session';
 
 const STARS = [1, 2, 3, 4, 5];
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
 export default function ReviewScreen({ navigation, route }) {
-  const { requestId, maid = {}, type = 'quick_service' } = route.params || {};
+  const { booking = {}, maid = {}, requestId, type = 'quick_service' } = route.params || {};
 
   const [rating, setRating]     = useState(0);
   const [comment, setComment]   = useState('');
@@ -23,31 +25,38 @@ export default function ReviewScreen({ navigation, route }) {
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      setError('Rating dena zaroori hai.');
+      setError('Kam az kam ek star zaroori hai.');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const sessionId = await getOrCreateSession();
-      await submitReview({
-        session_id:  sessionId,
-        maid_id:     maid.id,
-        reference_id: requestId,
-        reference_type: type,
+      const payload = {
+        booking_id: booking?.id || requestId || null,
+        maid_id: maid?.id || booking?.maid_id || booking?.maids?.id || null,
         rating,
-        comment:     comment.trim() || null,
+        comment: comment.trim() || null,
+      };
+
+      console.log('[REVIEW] Submitting:', JSON.stringify(payload));
+
+      const res = await fetch(`${API_URL}/api/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      setDone(true);
-    } catch (err) {
-      const code = err?.response?.data?.error;
-      if (code === 'DUPLICATE') {
-        setError(Strings.review.alreadyReviewed);
-      } else if (code === 'NOT_COMPLETED') {
-        setError(Strings.review.notCompletedError);
+
+      const data = await res.json();
+      console.log('[REVIEW] Response:', JSON.stringify(data));
+
+      if (data.success) {
+        setDone(true);
       } else {
-        setError(Strings.common.error);
+        setError(data.error || 'Review submit nahi ho saki.');
       }
+    } catch (err) {
+      console.error('[REVIEW] Error:', err);
+      setError('Server se connection nahi hua.');
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +88,7 @@ export default function ReviewScreen({ navigation, route }) {
             {/* Maid info */}
             <View style={styles.maidRow}>
               <View style={styles.avatar}><Text style={{ fontSize: 28 }}>🧹</Text></View>
-              <Text style={styles.maidName}>{maid?.name || 'Aapki Maid'}</Text>
+              <Text style={styles.maidName}>{maid?.name || booking?.maids?.name || booking?.maid?.name || 'Maid'}</Text>
             </View>
 
             {/* Star rating */}

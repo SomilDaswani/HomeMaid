@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 // Configure how notifications appear when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -71,7 +72,11 @@ export async function sendMaidEnRouteNotification(maid) {
         body: `${maid?.name || 'Maid'} aap ke ghar ki taraf aa rahi hain.`,
         sound: true,
       },
-      trigger: { seconds: 2 }, // slight delay for realism
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 2,
+        repeats: false,
+      },
     });
   } catch (err) {
     console.warn('[NOTIF] Failed to send en-route notification:', err.message);

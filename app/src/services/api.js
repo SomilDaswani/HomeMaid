@@ -93,14 +93,19 @@ export const getHomeownerBookings = (sessionId) =>
 export const transcribeAudio = (audioBase64) =>
   client.post('/api/voice/transcribe', { audio: audioBase64 }).then(r => r.data);
 
-export const transcribeAndParse = (audioBase64, mimeType = 'audio/m4a', sessionId = null) =>
-  client.post('/api/voice/transcribe-and-parse', { audio: audioBase64, mimeType, sessionId }).then(r => r.data);
+export const transcribeAndParse = (audioBase64, mimeType = 'audio/m4a', sessionId = null, gpsArea = null) =>
+  client.post('/api/voice/transcribe-and-parse', { audio: audioBase64, mimeType, sessionId, gps_area: gpsArea }).then(r => r.data);
 
-export const extractIntent = (transcript) =>
-  client.post('/api/voice/extract-intent', { transcript }).then(r => r.data);
+export const extractIntent = (transcript, gpsArea = null) =>
+  client.post('/api/voice/extract-intent', { transcript, gps_area: gpsArea }).then(r => r.data);
 
 export const getClarifyingQuestion = (transcript, missingFields) =>
   client.post('/api/voice/clarify', { transcript, missing_fields: missingFields })
+    .then(r => r.data);
+
+// Re-runs intent extraction with a plain text string (for clarification follow-ups)
+export const parseTextIntent = (text, sessionId, gpsArea = null) =>
+  client.post('/api/voice/parse-text', { text, session_id: sessionId, gps_area: gpsArea })
     .then(r => r.data);
 
 // ─── Reviews ──────────────────────────────────────────────────────────────────

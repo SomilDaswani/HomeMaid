@@ -4,52 +4,72 @@ const supabase = require('../lib/supabase');
 
 /**
  * POST /api/reviews
- * One review per booking per session (enforced by UNIQUE constraint).
- * Only allowed when booking is completed.
- * Calls update_maid_rating() RPC after insert.
+ * Submit a review for a booking/maid.
+ * Body: { booking_id, maid_id?, rating (1-5), comment? }
  */
 router.post('/', async (req, res) => {
   try {
-    const { booking_id, maid_id, session_id, rating, comment } = req.body;
+    console.log('[REVIEW] Incoming body:', JSON.stringify(req.body));
 
-    if (!booking_id || !maid_id || !session_id || !rating) {
-      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'booking_id, maid_id, session_id, rating required' });
-    }
-    if (rating < 1 || rating > 5) {
-      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'rating must be 1–5' });
+    const { booking_id, maid_id, rating, comment } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, error: 'Rating (1-5) is required' });
     }
 
-    // Verify booking is completed
-    const { data: booking } = await supabase
-      .from('bookings').select('status, session_id').eq('id', booking_id).single();
-
-    if (!booking || booking.status !== 'completed') {
-      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Review only allowed on completed bookings' });
-    }
-    if (booking.session_id !== session_id) {
-      return res.status(403).json({ error: 'FORBIDDEN' });
+    // Resolve maid_id from booking if not provided
+    let resolvedMaidId = maid_id;
+    if (!resolvedMaidId && booking_id) {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('maid_id')
+        .eq('id', booking_id)
+        .single();
+      resolvedMaidId = booking?.maid_id;
+      console.log('[REVIEW] Resolved maid_id from booking:', resolvedMaidId);
     }
 
     const { data, error } = await supabase
       .from('reviews')
-      .insert({ booking_id, maid_id, session_id, rating, comment })
+      .insert({
+        booking_id: booking_id || null,
+        maid_id: resolvedMaidId || null,
+        rating: parseInt(rating),
+        comment: comment || null,
+      })
       .select()
       .single();
 
     if (error) {
+      console.error('[REVIEW] Insert error:', error);
       if (error.code === '23505') {
-        return res.status(409).json({ error: 'CONFLICT', message: 'Review already submitted for this booking' });
+        return res.status(409).json({ success: false, error: 'Review already submitted for this booking' });
       }
-      throw error;
+      return res.status(500).json({ success: false, error: error.message });
     }
 
-    // Recalculate maid avg_rating
-    await supabase.rpc('update_maid_rating', { p_maid_id: maid_id });
+    // Update maid avg_rating
+    if (resolvedMaidId) {
+      const { data: allReviews } = await supabase
+        .from('reviews')
+        .select('rating')
+        .eq('maid_id', resolvedMaidId);
 
-    return res.status(201).json(data);
+      if (allReviews?.length) {
+        const avg = allReviews.reduce((s, r) => s + r.rating, 0) / allReviews.length;
+        await supabase
+          .from('maids')
+          .update({ avg_rating: Math.round(avg * 10) / 10 })
+          .eq('id', resolvedMaidId);
+        console.log('[REVIEW] Updated avg_rating for maid', resolvedMaidId, '→', Math.round(avg * 10) / 10);
+      }
+    }
+
+    console.log('[REVIEW] Success:', data);
+    res.json({ success: true, review: data });
   } catch (err) {
     console.error('[POST /reviews]', err.message);
-    return res.status(500).json({ error: 'SERVER_ERROR' });
+    return res.status(500).json({ success: false, error: 'SERVER_ERROR' });
   }
 });
 

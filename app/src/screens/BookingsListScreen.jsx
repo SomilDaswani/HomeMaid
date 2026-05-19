@@ -10,9 +10,10 @@ import { Spacing, CardShadow, Layout } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import { getHomeownerBookings } from '../services/api';
 import { getOrCreateSession } from '../services/session';
+import * as Haptics from 'expo-haptics';
 
 // ── Single booking card ───────────────────────────────────────────────────────
-function BookingCard({ booking, onPress }) {
+function BookingCard({ booking, onPress, onDispute, onReview }) {
   const status = booking.status || 'pending';
   const sc = StatusColors[status] || StatusColors.pending;
 
@@ -48,6 +49,32 @@ function BookingCard({ booking, onPress }) {
           <Text style={styles.priceText}>Rs. {(booking.agreed_price || booking.total_price).toLocaleString()}</Text>
         )}
       </View>
+
+      {/* Action buttons — only on completed bookings */}
+      {(status === 'completed' || status === 'disputed') && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.reviewBtn}
+            onPress={async (e) => {
+              e.stopPropagation?.();
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onReview?.(booking);
+            }}
+          >
+            <Text style={styles.reviewTxt}>⭐ Review Dein</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.disputeBtn}
+            onPress={async (e) => {
+              e.stopPropagation?.();
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onDispute?.(booking);
+            }}
+          >
+            <Text style={styles.disputeTxt}>{status === 'disputed' ? '⚖️ Masla Darj' : '⚠️ Masla Report Karein'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -129,7 +156,15 @@ export default function BookingsListScreen({ navigation }) {
           data={bookings}
           keyExtractor={(b) => b.id || String(Math.random())}
           renderItem={({ item }) => (
-            <BookingCard booking={item} onPress={() => handleCardPress(item)} />
+            <BookingCard
+              booking={item}
+              onPress={() => handleCardPress(item)}
+              onDispute={(b) => navigation.navigate('Dispute', { booking: b })}
+              onReview={(b) => navigation.navigate('Review', {
+                booking: b,
+                maid: b.maids || b.maid || {},
+              })}
+            />
           )}
           contentContainerStyle={[styles.list, !bookings.length && { flex: 1 }]}
           ListEmptyComponent={EmptyState}
@@ -195,6 +230,28 @@ const styles = StyleSheet.create({
   cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dateText: { fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textMuted },
   priceText: { fontFamily: FontFamily.bold, fontSize: FontSize.md, color: Colors.primary },
+  disputeBtn: {
+    marginTop: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Layout.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    alignSelf: 'flex-start',
+    backgroundColor: '#fffbeb',
+  },
+  disputeTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.xs, color: '#b45309' },
+  actionRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs, flexWrap: 'wrap' },
+  reviewBtn: {
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Layout.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#10b981',
+    alignSelf: 'flex-start',
+    backgroundColor: '#ecfdf5',
+  },
+  reviewTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.xs, color: '#059669' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
   emptyIcon: { fontSize: 52 },
   emptyTitle: { fontFamily: FontFamily.bold, fontSize: FontSize.lg, color: Colors.textPrimary },

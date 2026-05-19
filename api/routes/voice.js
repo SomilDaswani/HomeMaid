@@ -27,7 +27,7 @@ function getGroq() {
 router.post('/transcribe-and-parse', async (req, res) => {
   const startTime = Date.now();
   try {
-    const { audio, mimeType = 'audio/m4a', sessionId } = req.body;
+    const { audio, mimeType = 'audio/m4a', sessionId, gps_area } = req.body;
     const headerSessionId = req.headers['x-session-id'] || sessionId || null;
 
     if (!audio) {
@@ -133,7 +133,12 @@ Return ONLY valid JSON. No markdown.`,
 
     // ── Parse intent via IntentAgent (if Groq was used and we only have transcript) ──
     if (transcript && !intent) {
-      intent = await extractIntent(transcript, null, headerSessionId);
+      intent = await extractIntent(transcript, null, headerSessionId, gps_area);
+    }
+
+    // Inject GPS area into intent if provided and intent is missing area
+    if (intent && gps_area && !intent.area) {
+      intent.area = gps_area;
     }
 
     // Handle parse failure
@@ -200,14 +205,19 @@ function logVoiceTrace(sessionId, transcript, language, whisperConf, durationMs,
  */
 router.post('/extract-intent', async (req, res) => {
   try {
-    const { transcript, request_id } = req.body;
+    const { transcript, request_id, gps_area } = req.body;
     const sessionId = req.headers['x-session-id'] || null;
 
     if (!transcript || !transcript.trim()) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'transcript is required' });
     }
 
-    const intent = await extractIntent(transcript.trim(), request_id || null, sessionId);
+    let intent = await extractIntent(transcript.trim(), request_id || null, sessionId, gps_area);
+
+    // Inject GPS area if intent is missing area
+    if (intent && gps_area && !intent.area) {
+      intent.area = gps_area;
+    }
 
     if (!intent) {
       return res.status(200).json({
@@ -259,4 +269,37 @@ router.post('/clarify', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/voice/parse-text
+ * Runs IntentAgent on a plain-text string — used for clarification follow-ups.
+ * Body: { text: string, session_id?: string }
+ */
+router.post('/parse-text', async (req, res) => {
+  try {
+    const { text, session_id, gps_area } = req.body;
+    const headerSessionId = req.headers['x-session-id'] || session_id || null;
+
+    if (!text?.trim()) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'text is required' });
+    }
+
+    const result = await extractIntent(text.trim(), headerSessionId, gps_area);
+
+    const intent               = result?.intent || result;
+    const needsClarification   = !intent || (intent.confidence || 0) < 0.7;
+    const clarifyingQuestion   = needsClarification ? result?.clarifying_question || null : null;
+
+    return res.json({
+      transcript: text,
+      intent,
+      needs_clarification: needsClarification,
+      clarifying_question: clarifyingQuestion,
+    });
+  } catch (err) {
+    console.error('[POST /voice/parse-text]', err.message);
+    return res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 module.exports = router;
+

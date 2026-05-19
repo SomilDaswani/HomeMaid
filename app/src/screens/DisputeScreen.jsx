@@ -1,173 +1,218 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  TextInput, SafeAreaView, StatusBar, ActivityIndicator, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet, TextInput,
+  ScrollView, SafeAreaView, StatusBar, ActivityIndicator, Alert,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
-import { Strings } from '../constants/strings';
 import { fileDispute } from '../services/api';
 import { getOrCreateSession } from '../services/session';
 
 const DISPUTE_TYPES = [
-  { id: 'no_show',  label: Strings.dispute.noShowLabel,  icon: '🚫' },
-  { id: 'quality',  label: Strings.dispute.qualityLabel, icon: '⚠️' },
+  { id: 'price_dispute',       label: '💰 Qeemat Zyada Thi',     desc: 'Price was too high' },
+  { id: 'quality_complaint',   label: '👎 Kaam Theek Nahi Tha',  desc: 'Work quality was poor' },
+  { id: 'no_show',             label: '🚫 Maid Nahi Aayi',        desc: 'Maid did not show up' },
+  { id: 'other',               label: '📝 Kuch Aur',              desc: 'Something else' },
 ];
 
-export default function DisputeScreen({ navigation, route }) {
-  const { requestId, maid = {}, type = 'quick_service' } = route.params || {};
+const RESOLUTION_LABELS = {
+  refund_full:      { label: '✅ Pura Refund', color: '#22c55e' },
+  refund_partial:   { label: '🔁 Aadha Refund', color: '#f59e0b' },
+  discount_next:    { label: '🎟 Agla Discount', color: '#8b5cf6' },
+  no_action:        { label: '❌ Koi Action Nahi', color: '#ef4444' },
+  escalate_human:   { label: '🧑‍💼 Insaan Se Baat', color: '#3b82f6' },
+};
 
-  const [disputeType, setDisputeType] = useState('no_show');
-  const [description, setDescription] = useState('');
-  const [submitting, setSubmitting]   = useState(false);
-  const [done, setDone]               = useState(false);
-  const [error, setError]             = useState(null);
+export default function DisputeScreen({ navigation, route }) {
+  const { booking = {} } = route.params || {};
+
+  const [disputeType, setDisputeType]     = useState(null);
+  const [description, setDescription]     = useState('');
+  const [submitting, setSubmitting]       = useState(false);
+  const [resolution, setResolution]       = useState(null);
+  const [accepted, setAccepted]           = useState(false);
+
+  const canSubmit = disputeType && !submitting && !resolution;
 
   const handleSubmit = async () => {
-    if (!description.trim()) {
-      setError('Masla batana zaroori hai.');
-      return;
-    }
+    if (!canSubmit) return;
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setSubmitting(true);
-    setError(null);
     try {
       const sessionId = await getOrCreateSession();
-      await fileDispute({
-        session_id:     sessionId,
-        maid_id:        maid.id,
-        reference_id:   requestId,
-        reference_type: type,
-        dispute_type:   disputeType,
-        description:    description.trim(),
+      const data = await fileDispute({
+        booking_id:   booking.id,
+        session_id:   sessionId,
+        dispute_type: disputeType,
+        description:  description.trim() || '—',
       });
-      setDone(true);
+      setResolution(data.resolution || {
+        resolution: 'escalate_human',
+        message_to_user: 'Aap ki shikayat darj ho gayi hai. Hamara team 24 ghante mein aap se rabita karega.',
+        refund_percentage: 0,
+      });
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      const code = err?.response?.data?.error;
-      if (code === 'WINDOW_EXPIRED') {
-        setError(Strings.dispute.windowExpired);
-      } else if (code === 'TOO_EARLY') {
-        setError(Strings.dispute.tooEarlyNoShow);
-      } else {
-        setError(Strings.common.error);
-      }
+      Alert.alert('Error', 'Shikayat darj nahi ho saki. Dobara koshish karein.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleAccept = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setAccepted(true);
+    setTimeout(() => navigation.goBack(), 1500);
+  };
+
+  const handleEscalate = () => {
+    Alert.alert(
+      'Insaan Se Baat Karein',
+      'Hamara support team aap ki madad karega. WhatsApp: +92-300-1234567',
+      [{ text: 'Theek Hai' }]
+    );
+  };
+
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={s.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
+      {/* Header */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+          <Text style={s.backTxt}>← Wapas</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{Strings.dispute.title}</Text>
-        <View style={{ width: 40 }} />
+        <Text style={s.title}>⚖️ Masla Report Karein</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {done ? (
-          <View style={styles.doneState}>
-            <Text style={styles.doneIcon}>📋</Text>
-            <Text style={styles.doneTitle}>Complaint darj ho gayi</Text>
-            <Text style={styles.doneSub}>Hum jald review karenge.</Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.popToTop()}>
-              <Text style={styles.primaryBtnText}>Wapas Jayein</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Booking Summary */}
+        <View style={s.bookingSummary}>
+          <Text style={s.summaryTitle}>Booking #{(booking.id || '').slice(0, 8).toUpperCase()}</Text>
+          <Text style={s.summaryDetail}>
+            🧹 {booking.maids?.name || booking.maid?.name || 'Maid'} · Rs. {(booking.agreed_price || booking.total_price || 0).toLocaleString()}
+          </Text>
+        </View>
+
+        {!resolution ? (
           <>
-            {/* Dispute type */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{Strings.dispute.typeLabel}</Text>
-              <View style={styles.typeRow}>
-                {DISPUTE_TYPES.map(d => (
-                  <TouchableOpacity
-                    key={d.id}
-                    style={[styles.typeChip, disputeType === d.id && styles.typeChipActive]}
-                    onPress={() => setDisputeType(d.id)}
-                  >
-                    <Text style={{ fontSize: 24 }}>{d.icon}</Text>
-                    <Text style={[styles.typeLabel, disputeType === d.id && { color: Colors.error }]}>
-                      {d.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            {/* Dispute type selection */}
+            <Text style={s.sectionLabel}>Kya masla tha?</Text>
+            <View style={s.typeGrid}>
+              {DISPUTE_TYPES.map(t => (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[s.typeChip, disputeType === t.id && s.typeChipActive]}
+                  onPress={async () => {
+                    await Haptics.selectionAsync();
+                    setDisputeType(t.id);
+                  }}
+                >
+                  <Text style={[s.typeLabel, disputeType === t.id && s.typeLabelActive]}>{t.label}</Text>
+                  <Text style={s.typeDesc}>{t.desc}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             {/* Description */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Masle ki wazahat</Text>
-              <TextInput
-                style={styles.descInput}
-                value={description}
-                onChangeText={setDescription}
-                placeholder={Strings.dispute.descriptionPlaceholder}
-                placeholderTextColor={Colors.textMuted}
-                multiline
-                maxLength={500}
-              />
-            </View>
+            <Text style={s.sectionLabel}>Thori detail bataein (optional)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Maslan: maid ne poora ghar saaf nahi kiya, sirf ek kamra kiya..."
+              placeholderTextColor={Colors.textMuted}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+            />
 
-            {error && <Text style={styles.errorText}>{error}</Text>}
-
+            {/* Submit */}
             <TouchableOpacity
-              style={[styles.primaryBtn, styles.dangerBtn, submitting && { opacity: 0.6 }]}
+              style={[s.submitBtn, !canSubmit && s.submitDisabled]}
               onPress={handleSubmit}
-              disabled={submitting}
+              disabled={!canSubmit}
             >
               {submitting
-                ? <ActivityIndicator color={Colors.surface} />
-                : <Text style={styles.primaryBtnText}>{Strings.dispute.submitButton}</Text>
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={s.submitTxt}>AI Resolution Maangein ✨</Text>
               }
             </TouchableOpacity>
           </>
+        ) : (
+          /* AI Resolution Card */
+          <View style={s.resolutionCard}>
+            <Text style={s.resolutionHeader}>🤖 AI Faisla</Text>
+
+            {/* Resolution type badge */}
+            {RESOLUTION_LABELS[resolution.resolution] && (
+              <View style={[s.resBadge, { backgroundColor: RESOLUTION_LABELS[resolution.resolution].color + '22' }]}>
+                <Text style={[s.resBadgeTxt, { color: RESOLUTION_LABELS[resolution.resolution].color }]}>
+                  {RESOLUTION_LABELS[resolution.resolution].label}
+                </Text>
+              </View>
+            )}
+
+            {/* Refund percentage */}
+            {resolution.refund_percentage > 0 && (
+              <Text style={s.refundTxt}>💵 {resolution.refund_percentage}% refund aap ke account mein jayega</Text>
+            )}
+
+            {/* Message */}
+            <Text style={s.resolutionMsg}>{resolution.message_to_user || resolution.assessment}</Text>
+
+            {!accepted ? (
+              <View style={s.actionRow}>
+                <TouchableOpacity style={s.acceptBtn} onPress={handleAccept}>
+                  <Text style={s.acceptTxt}>✅ Theek Hai, Manzoor Hai</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.escalateBtn} onPress={handleEscalate}>
+                  <Text style={s.escalateTxt}>🧑‍💼 Insaan Se Baat Karni Hai</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Text style={s.acceptedTxt}>✅ Shukria! Aap ki request process ho rahi hai.</Text>
+            )}
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backText: { fontSize: 24, color: Colors.primary },
-  title: { fontFamily: FontFamily.bold, fontSize: FontSize.xl, color: Colors.error },
-  content: { padding: Spacing.md, gap: Spacing.lg },
-  section: { gap: Spacing.sm },
-  sectionLabel: { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: Colors.textPrimary },
-  typeRow: { flexDirection: 'row', gap: Spacing.sm },
-  typeChip: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.lg,
-    padding: Spacing.md, alignItems: 'center', gap: Spacing.xs,
-    borderWidth: 1.5, borderColor: Colors.border, ...CardShadow,
-  },
-  typeChipActive: { borderColor: Colors.error, backgroundColor: `${Colors.error}10` },
-  typeLabel: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textMuted, textAlign: 'center' },
-  descInput: {
-    backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md,
-    borderWidth: 1.5, borderColor: Colors.border, padding: Spacing.md,
-    fontFamily: FontFamily.regular, fontSize: FontSize.md,
-    color: Colors.textPrimary, minHeight: 120, textAlignVertical: 'top',
-  },
-  errorText: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.error, textAlign: 'center' },
-  primaryBtn: {
-    backgroundColor: Colors.accent, borderRadius: Layout.borderRadius.xl,
-    paddingVertical: Spacing.md + 2, alignItems: 'center', ...CardShadow,
-  },
-  dangerBtn: { backgroundColor: Colors.error },
-  primaryBtnText: { fontFamily: FontFamily.bold, fontSize: FontSize.lg, color: Colors.surface },
-  doneState: { alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.xxl },
-  doneIcon: { fontSize: 64 },
-  doneTitle: { fontFamily: FontFamily.bold, fontSize: FontSize.xl, color: Colors.textPrimary, textAlign: 'center' },
-  doneSub: { fontFamily: FontFamily.regular, fontSize: FontSize.md, color: Colors.textMuted },
+const s = StyleSheet.create({
+  screen:         { flex: 1, backgroundColor: Colors.background },
+  header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.sm },
+  backBtn:        { paddingRight: Spacing.sm },
+  backTxt:        { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.primary },
+  title:          { fontFamily: FontFamily.bold, fontSize: FontSize.lg, color: Colors.textPrimary },
+  scroll:         { padding: Spacing.md, gap: Spacing.md },
+  bookingSummary: { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, ...CardShadow },
+  summaryTitle:   { fontFamily: FontFamily.bold, fontSize: FontSize.md, color: Colors.textPrimary },
+  summaryDetail:  { fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 4 },
+  sectionLabel:   { fontFamily: FontFamily.semiBold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  typeGrid:       { gap: Spacing.sm },
+  typeChip:       { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md, padding: Spacing.md, borderWidth: 1.5, borderColor: Colors.border, ...CardShadow },
+  typeChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
+  typeLabel:      { fontFamily: FontFamily.semiBold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  typeLabelActive:{ color: Colors.primary },
+  typeDesc:       { fontFamily: FontFamily.regular, fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
+  input:          { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md, borderWidth: 1.5, borderColor: Colors.border, padding: Spacing.md, fontFamily: FontFamily.regular, fontSize: FontSize.sm, color: Colors.textPrimary, minHeight: 100, textAlignVertical: 'top' },
+  submitBtn:      { backgroundColor: Colors.primary, borderRadius: Layout.borderRadius.lg, paddingVertical: Spacing.md, alignItems: 'center', ...CardShadow },
+  submitDisabled: { opacity: 0.45 },
+  submitTxt:      { fontFamily: FontFamily.bold, fontSize: FontSize.md, color: '#fff' },
+  resolutionCard: { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.lg, padding: Spacing.md, borderWidth: 1.5, borderColor: Colors.primary + '40', gap: Spacing.sm, ...CardShadow },
+  resolutionHeader:{ fontFamily: FontFamily.bold, fontSize: FontSize.lg, color: Colors.textPrimary },
+  resBadge:       { alignSelf: 'flex-start', borderRadius: Layout.borderRadius.sm, paddingHorizontal: Spacing.sm, paddingVertical: 4 },
+  resBadgeTxt:    { fontFamily: FontFamily.bold, fontSize: FontSize.sm },
+  refundTxt:      { fontFamily: FontFamily.semiBold, fontSize: FontSize.sm, color: '#22c55e' },
+  resolutionMsg:  { fontFamily: FontFamily.regular, fontSize: FontSize.md, color: Colors.textPrimary, lineHeight: 22 },
+  actionRow:      { gap: Spacing.sm },
+  acceptBtn:      { backgroundColor: '#22c55e', borderRadius: Layout.borderRadius.md, paddingVertical: Spacing.sm + 2, alignItems: 'center' },
+  acceptTxt:      { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: '#fff' },
+  escalateBtn:    { backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.md, paddingVertical: Spacing.sm + 2, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  escalateTxt:    { fontFamily: FontFamily.semiBold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  acceptedTxt:    { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: '#22c55e', textAlign: 'center', paddingVertical: Spacing.sm },
 });

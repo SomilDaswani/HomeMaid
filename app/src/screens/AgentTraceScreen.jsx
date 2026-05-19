@@ -9,6 +9,7 @@ import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
 import { getSessionTraces } from '../services/api';
 import { getOrCreateSession } from '../services/session';
+import * as Speech from 'expo-speech';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -29,11 +30,29 @@ const AGENT_FILTERS = ['All', 'IntentAgent', 'VoiceAgent', 'MatchingAgent', 'Pri
 
 function TraceCard({ trace }) {
   const [expanded, setExpanded] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const colors = AGENT_COLORS[trace.agent_name] || DEFAULT_COLORS;
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(v => !v);
+  };
+
+  const speakTrace = async () => {
+    if (isSpeaking) {
+      Speech.stop();
+      setIsSpeaking(false);
+      return;
+    }
+    const text = `${trace.agent_name} says: ${trace.output_summary || 'No output'}`;
+    setIsSpeaking(true);
+    Speech.speak(text, {
+      language: 'en',
+      pitch: 1.0,
+      rate: 0.9,
+      onDone: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
   };
 
   const meta = trace.full_output?._meta;
@@ -54,6 +73,9 @@ function TraceCard({ trace }) {
           {meta?.model && <Text style={s.modelBadge}>{meta.model}</Text>}
           {meta?.cached && <Text style={s.cacheBadge}>cached</Text>}
           {trace.error && <Text style={s.errorBadge}>error</Text>}
+          <TouchableOpacity onPress={speakTrace} style={s.speakBtn}>
+            <Text style={s.speakBtnTxt}>{isSpeaking ? '⏹' : '🔊'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -226,4 +248,6 @@ const s = StyleSheet.create({
   codeTxt: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11, color: Colors.textPrimary, backgroundColor: '#F5F0EB', borderRadius: 6, padding: Spacing.sm, lineHeight: 16 },
   metaRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 4 },
   metaChip: { fontFamily: FontFamily.medium, fontSize: 10, color: Colors.textMuted, backgroundColor: '#F0F0F0', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, overflow: 'hidden' },
+  speakBtn: { padding: 4 },
+  speakBtnTxt: { fontSize: 16 },
 });

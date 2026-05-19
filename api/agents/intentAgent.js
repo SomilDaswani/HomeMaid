@@ -49,17 +49,37 @@ Return this exact JSON schema:
 
 /**
  * Compute confidence deterministically on the server — never trust Gemini's number.
+ * @param {object} intent - parsed intent
+ * @param {string|null} gpsArea - GPS-derived area (skip area penalty if present)
  */
-function computeConfidence(intent) {
+function computeConfidence(intent, gpsArea = null) {
   let score = 1.0;
 
-  // Missing or vague area
-  if (!intent.area || intent.area === 'null' || intent.area === '') {
-    score -= 0.2;
+  const VAGUE_CITIES = ['karachi', 'lahore', 'islamabad', 'rawalpindi', 'faisalabad'];
+  const VAGUE_TIMES = ['flexible', 'not specified', 'anytime', 'any time', 'null', '', 'koi bhi waqt'];
+
+  // --- Area check ---
+  const areaVal = (intent.area || '').toString().trim().toLowerCase();
+  const areaIsMissing = !areaVal || areaVal === 'null';
+  const areaIsTooVague = VAGUE_CITIES.includes(areaVal);
+
+  if (areaIsMissing) {
+    if (!gpsArea) {
+      score -= 0.2;
+    } else if (VAGUE_CITIES.includes(gpsArea.toLowerCase())) {
+      // GPS gave us only a city name — partial penalty
+      score -= 0.1;
+    }
+  } else if (areaIsTooVague && !gpsArea) {
+    score -= 0.15;
+  } else if (areaIsTooVague && gpsArea && VAGUE_CITIES.includes(gpsArea.toLowerCase())) {
+    score -= 0.1;
   }
 
-  // Missing or vague time
-  if (!intent.time_preference || intent.time_preference === 'null' || intent.time_preference === '') {
+  // --- Time check --- treat vague values as missing
+  const timeVal = (intent.time_preference || '').toString().trim().toLowerCase();
+  const timeIsMissing = !timeVal || timeVal === 'null' || VAGUE_TIMES.includes(timeVal);
+  if (timeIsMissing) {
     score -= 0.2;
   }
 
@@ -79,6 +99,8 @@ function computeConfidence(intent) {
   const missingCount = intent.missing_fields?.length || 0;
   if (missingCount >= 3) score -= 0.1;
 
+  console.log('[INTENT] Confidence breakdown: area=', areaVal, 'gps=', gpsArea, 'time=', timeVal, '→ score=', score.toFixed(2));
+
   return Math.max(0, Math.min(1.0, parseFloat(score.toFixed(2))));
 }
 
@@ -86,7 +108,7 @@ function computeConfidence(intent) {
  * Parse a service request transcript into structured intent.
  * Returns null on Gemini failure — caller must handle fallback.
  */
-async function extractIntent(transcript, requestId = null, sessionId = null) {
+async function extractIntent(transcript, requestId = null, sessionId = null, gpsArea = null) {
   const prompt = `${SYSTEM_PROMPT}\n\nNow parse this request: "${transcript}"`;
 
   const result = await callGemini('IntentAgent', prompt, 'voice_intent', requestId, true, sessionId);
@@ -98,11 +120,21 @@ async function extractIntent(transcript, requestId = null, sessionId = null) {
 
   // If Gemini returned a clarification-only response
   if (result.needs_clarification && result.clarification_question) {
-    return {
-      ...result,
-      confidence: 0.3,
-      missing_fields: result.missing_fields || ['area', 'time_preference', 'service_type'],
-    };
+    // If clarification is only about area and we have GPS, skip it
+    const missingFields = result.missing_fields || ['area', 'time_preference', 'service_type'];
+    const nonAreaMissing = missingFields.filter(f => f !== 'area');
+    if (gpsArea && nonAreaMissing.length === 0 && result.service_type) {
+      // GPS covers the only missing field — proceed without clarification
+      result.area = gpsArea;
+      result.needs_clarification = false;
+      result.clarification_question = null;
+    } else {
+      return {
+        ...result,
+        confidence: 0.3,
+        missing_fields: gpsArea ? nonAreaMissing : missingFields,
+      };
+    }
   }
 
   // Must have at least service_type to be useful
@@ -110,12 +142,17 @@ async function extractIntent(transcript, requestId = null, sessionId = null) {
     return null;
   }
 
+  // Inject GPS area if not already set
+  if (gpsArea && !result.area) {
+    result.area = gpsArea;
+  }
+
   // Compute server-side confidence (override whatever Gemini returned)
-  const confidence = computeConfidence(result);
+  const confidence = computeConfidence(result, gpsArea);
 
   // Build missing_fields if Gemini didn't provide them
   const missing = result.missing_fields || [];
-  if (!result.area && !missing.includes('area')) missing.push('area');
+  if (!result.area && !gpsArea && !missing.includes('area')) missing.push('area');
   if (!result.time_preference && !missing.includes('time_preference')) missing.push('time_preference');
 
   return {

@@ -7,6 +7,12 @@ import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, CardShadow, Layout } from '../constants/spacing';
 import { getQuickServiceBids, triggerMockBid, selectBid } from '../services/api';
+import * as Haptics from 'expo-haptics';
+
+const SERVICE_LABELS = {
+  cleaning: 'Safai', laundry: 'Dhulai', cooking: 'Khana Pakana',
+  washing_dishes: 'Bartan Dhona', cleaning_washroom: 'Washroom Safai', ironing_clothes: 'Istri Karna',
+};
 
 function CountdownTimer({ expiresAt }) {
   const [remaining, setRemaining] = useState('');
@@ -105,6 +111,7 @@ export default function BidListScreen({ navigation, route }) {
     try {
       const res = await selectBid(request.id, bid.id);
       if (res.success || res.maid_id) {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         navigation.replace('Confirmation', {
           maid: bid.maids, price: bid.offered_price,
           service_type: request.service_types?.[0] || 'cleaning',
@@ -128,6 +135,18 @@ export default function BidListScreen({ navigation, route }) {
         <View><Text style={s.title}>Bids Aa Rahi Hain</Text><Text style={s.sub}>{bids.length} bid{bids.length !== 1 ? 's' : ''}</Text></View>
         <View style={{ width: 40 }} />
       </View>
+
+      {/* Request summary card */}
+      {request && (
+        <View style={s.summaryCard}>
+          <Text style={s.summaryTitle}>📋 Aap ki Request:</Text>
+          <Text style={s.summaryText}>
+            {(request.service_types || []).map(st => SERVICE_LABELS[st] || st).join(' + ')}
+            {request.area_label ? ` • ${request.area_label}` : ''}
+          </Text>
+          <Text style={s.summaryPrice}>Rs. {request.estimated_price?.toLocaleString() || '—'} estimated</Text>
+        </View>
+      )}
       {bids.length > 0 && (
         <View style={s.sortRow}>
           <TouchableOpacity style={[s.sortChip, sortBy==='price' && s.sortAct]} onPress={() => setSortBy('price')}>
@@ -184,4 +203,8 @@ const s = StyleSheet.create({
   countdownUrgent: { color: Colors.error },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.overlay, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   overlayTxt: { fontFamily: FontFamily.semiBold, fontSize: FontSize.md, color: Colors.surface },
+  summaryCard: { marginHorizontal: Spacing.md, marginTop: Spacing.sm, backgroundColor: '#EBF5FF', borderRadius: Layout.borderRadius.md, padding: Spacing.sm, borderLeftWidth: 3, borderLeftColor: Colors.primary, gap: 2 },
+  summaryTitle: { fontFamily: FontFamily.semiBold, fontSize: FontSize.xs, color: Colors.primary },
+  summaryText: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textPrimary },
+  summaryPrice: { fontFamily: FontFamily.regular, fontSize: FontSize.xs, color: Colors.textMuted },
 });
