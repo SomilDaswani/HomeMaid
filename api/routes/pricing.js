@@ -30,6 +30,7 @@ router.post('/calculate', async (req, res) => {
     }
 
     const primaryService = service_types[0];
+    console.log(`[PRICING] Received calculate request. Duration: ${complexity.duration_hours}h, Start: ${scheduled_start}`);
 
     // ── 1. Base rate from market median ───────────────────────────────────────
     let baseHourlyRate = 0;

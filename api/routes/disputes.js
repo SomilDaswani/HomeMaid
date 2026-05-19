@@ -14,6 +14,8 @@ router.post('/', async (req, res) => {
   const startTime = Date.now();
   try {
     const { booking_id, session_id, dispute_type, description } = req.body;
+    console.log('[DISPUTE] Body received:', JSON.stringify(req.body));
+    console.log('[DISPUTE] Headers:', req.headers['content-type']);
 
     if (!booking_id || !session_id || !dispute_type) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'booking_id, session_id, dispute_type required' });
@@ -46,13 +48,19 @@ router.post('/', async (req, res) => {
     }
 
     // ── DisputeAgent: AI-powered resolution ──────────────────────────────────
+    const serviceName = (booking?.service_types || []).join(', ') || 'home service';
+    const maidName = booking?.maids?.name || booking?.maid_name || 'Unknown';
+    const rating = booking?.maids?.avg_rating || 'N/A';
+    const jobs = booking?.maids?.jobs_completed || 0;
+    const price = booking?.agreed_price || booking?.total_price || 0;
+
     const prompt = `You are a fair AI dispute resolution agent for HomeMaid, a domestic services platform in Pakistan.
 
 Booking details:
-- Service: ${(booking.service_types || []).join(', ')}
-- Date: ${booking.scheduled_date || 'unknown'}
-- Maid: ${booking.maids?.name || 'Unknown'} (Rating: ${booking.maids?.avg_rating || 'N/A'}/5, Jobs: ${booking.maids?.jobs_completed || 0})
-- Price paid: Rs. ${booking.agreed_price || booking.total_price || 0}
+- Service: ${serviceName}
+- Date: ${booking?.scheduled_date || 'unknown'}
+- Maid: ${maidName} (Rating: ${rating}/5, Jobs: ${jobs})
+- Price paid: Rs. ${price}
 - Dispute type: ${dispute_type}
 - User's description: "${description || 'No description provided'}"
 

@@ -42,12 +42,14 @@ export default function DisputeScreen({ navigation, route }) {
     setSubmitting(true);
     try {
       const sessionId = await getOrCreateSession();
-      const data = await fileDispute({
-        booking_id:   booking.id,
+      const payload = {
+        booking_id:   booking.id || booking.booking_id,
         session_id:   sessionId,
         dispute_type: disputeType,
         description:  description.trim() || '—',
-      });
+      };
+      console.log('[DISPUTE] Submitting payload:', JSON.stringify(payload));
+      const data = await fileDispute(payload);
       setResolution(data.resolution || {
         resolution: 'escalate_human',
         message_to_user: 'Aap ki shikayat darj ho gayi hai. Hamara team 24 ghante mein aap se rabita karega.',

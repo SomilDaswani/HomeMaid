@@ -1,10 +1,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const supabase = require('./supabase');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 
-// ── Single stable model ───────────────────────────────────────────────────────
-const MODEL = 'gemini-2.5-flash-lite';
+// ── Models ───────────────────────────────────────────────────────────────────
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 
 // ── Circuit breaker state ─────────────────────────────────────────────────────
 const breaker = {
@@ -65,32 +68,54 @@ function setCache(key, value) {
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function tryModel(prompt, expectJson, maxRetries = 3) {
-  const model = genAI.getGenerativeModel({ model: MODEL });
   let lastErr = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // ── 1. Try Groq (Primary) ──
     try {
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().trim();
+      const response = await groq.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 1024,
+        ...(expectJson && { response_format: { type: 'json_object' } })
+      });
+      const text = response.choices[0]?.message?.content || '';
 
       if (expectJson) {
         const clean = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-        return { output: JSON.parse(clean), modelUsed: MODEL, attempts: attempt + 1 };
+        return { output: JSON.parse(clean), modelUsed: GROQ_MODEL, attempts: attempt + 1 };
       }
-      return { output: text, modelUsed: MODEL, attempts: attempt + 1 };
-    } catch (err) {
-      lastErr = err;
-      const status = err?.status || err?.httpStatusCode || 0;
-      // Retry on 429 (quota) or 503 (overloaded)
-      if (status === 429 || status === 503) {
-        const delayMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-        console.warn(`[GEMINI] ${MODEL} returned ${status}, retry ${attempt + 1}/${maxRetries} in ${delayMs}ms`);
-        await sleep(delayMs);
-        continue;
+      return { output: text, modelUsed: GROQ_MODEL, attempts: attempt + 1 };
+    } catch (groqErr) {
+      console.warn(`[GROQ] ${GROQ_MODEL} failed (attempt ${attempt + 1}): ${groqErr.message}`);
+      lastErr = groqErr;
+
+      // ── 2. Fallback to Gemini ──
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+
+        if (expectJson) {
+          const clean = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+          return { output: JSON.parse(clean), modelUsed: GEMINI_MODEL, attempts: attempt + 1 };
+        }
+        return { output: text, modelUsed: GEMINI_MODEL, attempts: attempt + 1 };
+      } catch (err) {
+        lastErr = err;
+        const status = err?.status || err?.httpStatusCode || 0;
+        // Retry on 429 (quota) or 503 (overloaded)
+        if (status === 429 || status === 503) {
+          const delayMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+          console.warn(`[GEMINI] ${GEMINI_MODEL} returned ${status}, retry ${attempt + 1}/${maxRetries} in ${delayMs}ms`);
+          await sleep(delayMs);
+          continue;
+        }
+        // Non-retryable error — break out and throw
+        console.error(`[GEMINI] ${GEMINI_MODEL} non-retryable error (${status}): ${err.message}`);
+        break;
       }
-      // Non-retryable error — break
-      console.error(`[GEMINI] ${MODEL} non-retryable error (${status}): ${err.message}`);
-      break;
     }
   }
   throw lastErr;
@@ -138,9 +163,10 @@ async function callGemini(agentName, prompt, sessionType = 'voice_intent', refer
     output = result.output;
     modelUsed = result.modelUsed;
     attempts = result.attempts;
+    if (modelUsed === GEMINI_MODEL) fallbackTriggered = true;
     recordSuccess();
   } catch (err) {
-    console.error(`[GEMINI] ${MODEL} failed after retries: ${err.message}`);
+    console.error(`[AI] All models failed after retries: ${err.message}`);
     errorMsg = err.message;
     recordFailure();
   }
@@ -175,4 +201,4 @@ function logTrace(agentName, prompt, sessionType, referenceId, sessionId, output
   }).then(() => {}).catch(() => {});
 }
 
-module.exports = { callGemini, genAI, MODEL };
+module.exports = { callGemini, genAI, GROQ_MODEL, GEMINI_MODEL };

@@ -42,7 +42,7 @@ const RECORDING_OPTIONS = {
   web: {},
 };
 
-export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, gpsArea }) {
+export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, gpsArea, isQuickService = false }) {
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -138,6 +138,8 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
     setProcessing(true);
     onProcessing?.(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    console.log('[VoiceButton] stopAndProcess isQuickService:', isQuickService);
 
     try {
       await recordingRef.current.stopAndUnloadAsync();
@@ -170,6 +172,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
           mimeType: 'audio/m4a',
           sessionId,
           gps_area: gpsArea,
+          is_quick_service: isQuickService,
         }),
       });
 
@@ -198,6 +201,8 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
     if (!textInput.trim()) return;
     setProcessing(true);
     onProcessing?.(true);
+    
+    console.log('[VoiceButton] handleTextSubmit isQuickService:', isQuickService);
 
     try {
       const response = await fetch(`${API_URL}/api/voice/extract-intent`, {
@@ -206,16 +211,17 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
           'Content-Type': 'application/json',
           ...(sessionId ? { 'x-session-id': sessionId } : {}),
         },
-        body: JSON.stringify({ transcript: textInput.trim(), gps_area: gpsArea }),
+        body: JSON.stringify({ transcript: textInput.trim(), gps_area: gpsArea, is_quick_service: isQuickService }),
       });
 
       const data = await response.json();
-      if (data.success && data.intent) {
+      console.log('[VoiceButton] handleTextSubmit response:', JSON.stringify(data).slice(0, 300));
+      if ((data.success || data.intent) && data.intent) {
         onIntentParsed?.(data);
         setTextInput('');
         setShowTextFallback(false);
       } else {
-        setErrorMsg('Samajh nahi aaya. Dobara likhein.');
+        setErrorMsg(data.message || 'Samajh nahi aaya. Dobara likhein.');
       }
     } catch {
       setErrorMsg('Network error. Dobara try karein.');

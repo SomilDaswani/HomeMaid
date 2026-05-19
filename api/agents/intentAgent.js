@@ -21,7 +21,15 @@ Handle these edge cases:
 - Ambiguous: "koi aajaye" (someone should come) → ask what service
 - Landmarks: "Dolmen Mall ke paas" → area: "Clifton"
 - Relative time: "kal subah" → tomorrow morning, "parso" → day after tomorrow, "is hafte" → this week
-- Time words: "subah" → 08:00-10:00, "dopahar" → 12:00-14:00, "shaam" → 17:00-19:00, "raat" → 20:00+
+- Time parsing examples:
+  "2-3pm" → time_preference: "14:00-15:00"
+  "2 se 3 baje" → time_preference: "14:00-15:00"
+  "kal subah" → time_preference: "tomorrow morning"
+  "dopahar baad" → time_preference: "afternoon"
+  "subah" → time_preference: "08:00-10:00"
+  "dopahar" → time_preference: "12:00-14:00"
+  "shaam" → time_preference: "17:00-19:00"
+  "raat" → time_preference: "20:00+"
 
 Area name mapping:
 - "Gulshan", "Gulshan Iqbal" → "Gulshan-e-Iqbal"
@@ -52,7 +60,7 @@ Return this exact JSON schema:
  * @param {object} intent - parsed intent
  * @param {string|null} gpsArea - GPS-derived area (skip area penalty if present)
  */
-function computeConfidence(intent, gpsArea = null) {
+function computeConfidence(intent, gpsArea = null, isQuickService = false) {
   let score = 1.0;
 
   const VAGUE_CITIES = ['karachi', 'lahore', 'islamabad', 'rawalpindi', 'faisalabad'];
@@ -79,7 +87,7 @@ function computeConfidence(intent, gpsArea = null) {
   // --- Time check --- treat vague values as missing
   const timeVal = (intent.time_preference || '').toString().trim().toLowerCase();
   const timeIsMissing = !timeVal || timeVal === 'null' || VAGUE_TIMES.includes(timeVal);
-  if (timeIsMissing) {
+  if (timeIsMissing && !isQuickService) {
     score -= 0.2;
   }
 
@@ -108,7 +116,8 @@ function computeConfidence(intent, gpsArea = null) {
  * Parse a service request transcript into structured intent.
  * Returns null on Gemini failure — caller must handle fallback.
  */
-async function extractIntent(transcript, requestId = null, sessionId = null, gpsArea = null) {
+async function extractIntent(transcript, requestId = null, sessionId = null, gpsArea = null, isQuickService = false) {
+  console.log('[AGENT] extractIntent isQuickService:', isQuickService);
   const prompt = `${SYSTEM_PROMPT}\n\nNow parse this request: "${transcript}"`;
 
   const result = await callGemini('IntentAgent', prompt, 'voice_intent', requestId, true, sessionId);
@@ -148,12 +157,19 @@ async function extractIntent(transcript, requestId = null, sessionId = null, gps
   }
 
   // Compute server-side confidence (override whatever Gemini returned)
-  const confidence = computeConfidence(result, gpsArea);
+  const confidence = computeConfidence(result, gpsArea, isQuickService);
 
   // Build missing_fields if Gemini didn't provide them
   const missing = result.missing_fields || [];
   if (!result.area && !gpsArea && !missing.includes('area')) missing.push('area');
-  if (!result.time_preference && !missing.includes('time_preference')) missing.push('time_preference');
+  if (!result.time_preference && !missing.includes('time_preference') && !isQuickService) missing.push('time_preference');
+
+  // For quick service, inject time and remove it from missing
+  if (isQuickService) {
+    if (!result.time_preference) result.time_preference = 'abhi';
+    const timeIdx = missing.indexOf('time_preference');
+    if (timeIdx !== -1) missing.splice(timeIdx, 1);
+  }
 
   return {
     ...result,

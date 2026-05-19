@@ -125,9 +125,10 @@ export default function BookingsListScreen({ navigation }) {
   const handleCardPress = (booking) => {
     navigation.navigate('BookingStatus', {
       requestId: booking.id,
-      maid:      booking.maid || {},
+      maid:      booking.maids || booking.maid || {},
       price:     booking.agreed_price || 0,
       type:      'booking',
+      booking:   booking,
     });
   };
 
@@ -159,7 +160,10 @@ export default function BookingsListScreen({ navigation }) {
             <BookingCard
               booking={item}
               onPress={() => handleCardPress(item)}
-              onDispute={(b) => navigation.navigate('Dispute', { booking: b })}
+              onDispute={(b) => navigation.navigate('Dispute', {
+                booking: b,
+                maid: b.maids || b.maid || {},
+              })}
               onReview={(b) => navigation.navigate('Review', {
                 booking: b,
                 maid: b.maids || b.maid || {},

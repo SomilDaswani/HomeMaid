@@ -87,7 +87,7 @@ export default function RoleSelectScreen({ navigation }) {
       }
 
       setShowPhoneModal(false);
-      navigation.replace('MainTabs');
+      navigation.replace('HomeMap');
     } catch (err) {
       console.error('[PHONE] Error:', err);
       setPhoneError('Server se connection nahi hua. Dobara try karein.');
@@ -98,7 +98,7 @@ export default function RoleSelectScreen({ navigation }) {
 
   const handleSkip = () => {
     setShowPhoneModal(false);
-    navigation.replace('MainTabs');
+    navigation.replace('HomeMap');
   };
 
   return (

@@ -2,7 +2,6 @@ import { registerRootComponent } from 'expo';
 import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -40,65 +39,11 @@ const PlaceholderScreen = ({ route }) => (
   </View>
 );
 
+// (Tab navigator removed — bottom navigation is handled inside HomeMapScreen)
+
 const Stack = createStackNavigator();
-const Tab = createBottomTabNavigator();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
-
-// ─── Tab icon renderer ─────────────────────────────────────────────────────────
-function TabIcon({ name, focused }) {
-  const icons = { Map: '📍', Bookings: '📅', Traces: '🧠' };
-  return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45 }}>{icons[name]}</Text>
-  );
-}
-
-// ─── Tab navigator ─────────────────────────────────────────────────────────────
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-        tabBarLabel: ({ focused }) => (
-          <Text style={[
-            tabStyles.label,
-            { color: focused ? Colors.primary : Colors.textMuted },
-          ]}>
-            {Strings.tabs[route.name.toLowerCase()] || route.name}
-          </Text>
-        ),
-        tabBarStyle: tabStyles.bar,
-        headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
-      })}
-    >
-      <Tab.Screen name="Map" component={HomeMapScreen} />
-      <Tab.Screen name="Bookings" component={BookingsListScreen} />
-      <Tab.Screen name="Traces" component={AgentTraceScreen} />
-    </Tab.Navigator>
-  );
-}
-
-const tabStyles = StyleSheet.create({
-  bar: {
-    backgroundColor: Colors.surface,
-    borderTopWidth: 0,
-    height: Layout.tabBarHeight,
-    paddingBottom: Spacing.sm,
-    paddingTop: Spacing.xs,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  label: {
-    fontFamily: FontFamily.medium,
-    fontSize: FontSize.xs,
-    marginTop: 2,
-  },
-});
 
 // ─── Toast config ──────────────────────────────────────────────────────────────
 const toastConfig = {
@@ -175,9 +120,13 @@ export default function App() {
             screenOptions={{ headerShown: false, animationEnabled: true }}
           >
             <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
-            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="HomeMap" component={HomeMapScreen} />
 
-            {/* Modals — pushed on top of tabs */}
+            {/* Full-screen navigable screens */}
+            <Stack.Screen name="BookingsList" component={BookingsListScreen} />
+            <Stack.Screen name="Traces" component={AgentTraceScreen} />
+
+            {/* Modals — pushed on top */}
             <Stack.Screen name="QuickService" component={QuickServiceScreen}
               options={{ presentation: 'modal' }} />
             <Stack.Screen name="BidList" component={BidListScreen}

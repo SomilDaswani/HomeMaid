@@ -95,7 +95,13 @@ export default function BookingStatusScreen({ navigation, route }) {
     maid   = {},
     price  = 0,
     type   = 'quick_service',
+    booking = {},
   } = route.params || {};
+
+  console.log('[COMPLETION] booking object:', JSON.stringify(booking, null, 2));
+
+  const maidName = booking?.maids?.name || booking?.maid?.name || booking?.maid_name || maid?.name || 'Maid';
+  const fullMaidObj = booking?.maids || booking?.maid || maid;
 
   const [status, setStatus] = useState('bid_selected');
   const [advancing, setAdvancing] = useState(false);
@@ -141,9 +147,13 @@ export default function BookingStatusScreen({ navigation, route }) {
     setAdvancing(false);
   }, [advancing, requestId, type]);
 
-  // ── Navigate to review ────────────────────────────────────────────────────
+  // ── Navigate to actions ───────────────────────────────────────────────────
   const goToReview = () => {
-    navigation.replace('Review', { requestId, maid, type });
+    navigation.replace('Review', { requestId, maid: fullMaidObj, type, booking });
+  };
+
+  const goToDispute = () => {
+    navigation.navigate('Dispute', { requestId, maid: fullMaidObj, type, booking });
   };
 
   const isCompleted = status === 'completed';
@@ -163,10 +173,10 @@ export default function BookingStatusScreen({ navigation, route }) {
         {/* ── Maid info card ── */}
         <View style={styles.maidCard}>
           <View style={styles.maidAvatar}>
-            <Text style={styles.maidAvatarText}>🧹</Text>
+            <Text style={styles.maidAvatarText}>{maidName.charAt(0).toUpperCase()}</Text>
           </View>
           <View style={styles.maidInfo}>
-            <Text style={styles.maidName}>{maid?.name || 'Aapki Maid'}</Text>
+            <Text style={styles.maidName}>{maidName}</Text>
             <Text style={styles.maidMeta}>
               {maid?.area_label || 'Karachi'}
               {maid?.avg_rating ? `  ·  ${maid.avg_rating.toFixed(1)} ★` : ''}
@@ -204,11 +214,16 @@ export default function BookingStatusScreen({ navigation, route }) {
           })}
         </View>
 
-        {/* ── Complete: Review button ── */}
+        {/* ── Complete: Action buttons ── */}
         {isCompleted && (
-          <TouchableOpacity style={styles.reviewBtn} onPress={goToReview} activeOpacity={0.88}>
-            <Text style={styles.reviewBtnText}>⭐ Review Dein</Text>
-          </TouchableOpacity>
+          <View style={{ width: '100%', gap: Spacing.sm }}>
+            <TouchableOpacity style={styles.reviewBtn} onPress={goToReview} activeOpacity={0.88}>
+              <Text style={styles.reviewBtnText}>⭐ Review Dein</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.disputeBtn} onPress={goToDispute} activeOpacity={0.88}>
+              <Text style={styles.disputeBtnText}>⚠️ Masla Report Karein</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <View style={{ flex: 1 }} />
@@ -361,6 +376,21 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.bold,
     fontSize: FontSize.lg,
     color: Colors.surface,
+  },
+  disputeBtn: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.borderRadius.xl,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.error,
+    ...CardShadow,
+  },
+  disputeBtnText: {
+    fontFamily: FontFamily.bold,
+    fontSize: FontSize.lg,
+    color: Colors.error,
   },
   // ── Demo controls — intentionally plain / dev-tool style ──
   demoSection: {

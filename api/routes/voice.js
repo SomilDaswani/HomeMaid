@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { extractIntent, generateClarifyingQuestion } = require('../agents/intentAgent');
-const { callGemini, genAI, MODEL } = require('../lib/gemini');
+const { callGemini, genAI, GEMINI_MODEL } = require('../lib/gemini');
 const supabase = require('../lib/supabase');
 
 // ── Groq Whisper client (lazy init to avoid crash if key missing) ─────────────
@@ -27,8 +27,10 @@ function getGroq() {
 router.post('/transcribe-and-parse', async (req, res) => {
   const startTime = Date.now();
   try {
-    const { audio, mimeType = 'audio/m4a', sessionId, gps_area } = req.body;
+    const { audio, mimeType = 'audio/m4a', sessionId, gps_area, is_quick_service } = req.body;
     const headerSessionId = req.headers['x-session-id'] || sessionId || null;
+    
+    console.log('[ROUTE] /transcribe-and-parse is_quick_service:', is_quick_service);
 
     if (!audio) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'audio (base64) is required' });
@@ -77,7 +79,7 @@ router.post('/transcribe-and-parse', async (req, res) => {
     // ── Path B: Gemini Multimodal (fallback) ────────────────────────────────
     if (!transcript) {
       try {
-        const model = genAI.getGenerativeModel({ model: MODEL });
+        const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
         const result = await model.generateContent([
           {
             inlineData: {
@@ -205,14 +207,16 @@ function logVoiceTrace(sessionId, transcript, language, whisperConf, durationMs,
  */
 router.post('/extract-intent', async (req, res) => {
   try {
-    const { transcript, request_id, gps_area } = req.body;
+    const { transcript, request_id, gps_area, is_quick_service } = req.body;
     const sessionId = req.headers['x-session-id'] || null;
+    
+    console.log('[ROUTE] /extract-intent is_quick_service:', is_quick_service);
 
     if (!transcript || !transcript.trim()) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'transcript is required' });
     }
 
-    let intent = await extractIntent(transcript.trim(), request_id || null, sessionId, gps_area);
+    let intent = await extractIntent(transcript.trim(), request_id || null, sessionId, gps_area, is_quick_service);
 
     // Inject GPS area if intent is missing area
     if (intent && gps_area && !intent.area) {
@@ -222,6 +226,7 @@ router.post('/extract-intent', async (req, res) => {
     if (!intent) {
       return res.status(200).json({
         success: false,
+        transcript: transcript.trim(),
         error: 'agent_unavailable',
         intent: null,
         needs_clarification: false,
@@ -237,6 +242,7 @@ router.post('/extract-intent', async (req, res) => {
 
     return res.json({
       success: true,
+      transcript: transcript.trim(),
       intent,
       needs_clarification: needsClarification,
       clarifying_question: clarifyingQuestion,
@@ -276,21 +282,27 @@ router.post('/clarify', async (req, res) => {
  */
 router.post('/parse-text', async (req, res) => {
   try {
-    const { text, session_id, gps_area } = req.body;
+    const { text, session_id, gps_area, is_quick_service } = req.body;
     const headerSessionId = req.headers['x-session-id'] || session_id || null;
+    
+    console.log('[ROUTE] /parse-text is_quick_service:', is_quick_service);
 
     if (!text?.trim()) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'text is required' });
     }
 
-    const result = await extractIntent(text.trim(), headerSessionId, gps_area);
+    const result = await extractIntent(text.trim(), null, headerSessionId, gps_area, is_quick_service);
 
     const intent               = result?.intent || result;
     const needsClarification   = !intent || (intent.confidence || 0) < 0.7;
-    const clarifyingQuestion   = needsClarification ? result?.clarifying_question || null : null;
+    let clarifyingQuestion     = null;
+    if (needsClarification && intent) {
+      clarifyingQuestion = await generateClarifyingQuestion(intent, null, headerSessionId);
+    }
 
     return res.json({
-      transcript: text,
+      success: true,
+      transcript: text.trim(),
       intent,
       needs_clarification: needsClarification,
       clarifying_question: clarifyingQuestion,

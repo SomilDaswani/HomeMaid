@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
@@ -65,8 +65,9 @@ export default function QuickServiceScreen({ navigation, route }) {
   const [clarifyQuestion, setClarifyQuestion] = useState(null);
   const [transcript, setTranscript] = useState(null);
   const [clarificationAnswer, setClarificationAnswer] = useState('');
-  const [originalInput, setOriginalInput] = useState('');
   const [clarificationLoading, setClarificationLoading] = useState(false);
+  const fullContext = useRef('');
+  const clarificationRounds = useRef(0);
 
   const [userLocation, setUserLocation] = useState(null);
   const [userAddress, setUserAddress] = useState(null);
@@ -130,10 +131,13 @@ export default function QuickServiceScreen({ navigation, route }) {
   const handleDurationChange = (dur) => { setDurationHours(dur); fetchPrice(serviceType, rooms, dur); };
 
   // Called by VoiceButton with full parsed response
-  const handleIntentParsed = (data) => {
+  const handleIntentParsed = (data, isClarification = false) => {
     const intent = data.intent;
     setTranscript(data.transcript || null);
-    setOriginalInput(data.transcript || '');
+    if (!isClarification) {
+      fullContext.current = data.transcript || '';
+      clarificationRounds.current = 0;
+    }
     setParsedIntent(intent);
     setIntentConfirmed(false);
     setClarificationAnswer('');
@@ -155,15 +159,23 @@ export default function QuickServiceScreen({ navigation, route }) {
   const handleClarificationSubmit = async () => {
     if (!clarificationAnswer.trim()) return;
     setClarificationLoading(true);
-    const enriched = `${originalInput}. ${clarificationAnswer.trim()}`;
+    clarificationRounds.current += 1;
+    // Fallback to transcript state if ref is empty
+    if (!fullContext.current && transcript) {
+      fullContext.current = transcript;
+    }
+    
+    // Accumulate BEFORE async parse
+    fullContext.current = fullContext.current ? `${fullContext.current}. ${clarificationAnswer.trim()}` : clarificationAnswer.trim();
+    const currentContext = fullContext.current;
+    
     setClarificationAnswer('');
-    setOriginalInput(enriched);
     setIntentProcessing(true);
     try {
       // Re-use the voice route's text path via the API service
       const { parseTextIntent } = require('../services/api');
-      const result = await parseTextIntent(enriched, sessionId, userAddress);
-      handleIntentParsed(result);
+      const result = await parseTextIntent(currentContext, sessionId, userAddress, true); // true for isQuickService
+      handleIntentParsed(result, true);
     } catch {
       // fallback: clear clarification so user can try again
       setClarifyQuestion(null);
@@ -250,6 +262,7 @@ export default function QuickServiceScreen({ navigation, route }) {
             onProcessing={setIntentProcessing}
             sessionId={sessionId}
             gpsArea={userAddress}
+            isQuickService={true}
           />
         </View>
 
