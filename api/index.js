@@ -21,6 +21,7 @@ app.use('/api/reviews',        require('./routes/reviews'));
 app.use('/api/disputes',       require('./routes/disputes'));
 app.use('/api/notifications',  require('./routes/notifications'));
 app.use('/api/traces',         require('./routes/traces'));
+app.use('/api/homeowners',     require('./routes/homeowners'));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

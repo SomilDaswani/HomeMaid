@@ -14,12 +14,12 @@ import { getOrCreateSession } from '../services/session';
 import * as Haptics from 'expo-haptics';
 
 const SERVICE_TYPES = [
-  { id: 'cleaning',          label: 'Safai',           icon: '🧹' },
-  { id: 'laundry',           label: 'Dhulai',          icon: '👕' },
-  { id: 'cooking',           label: 'Khana',           icon: '🍳' },
-  { id: 'washing_dishes',    label: 'Bartan',          icon: '🍽️' },
-  { id: 'cleaning_washroom', label: 'Washroom',        icon: '🚿' },
-  { id: 'ironing_clothes',   label: 'Istri',           icon: '👔' },
+  { id: 'cleaning', label: 'Safai', icon: '🧹' },
+  { id: 'laundry', label: 'Dhulai', icon: '👕' },
+  { id: 'cooking', label: 'Khana', icon: '🍳' },
+  { id: 'washing_dishes', label: 'Bartan', icon: '🍽️' },
+  { id: 'cleaning_washroom', label: 'Washroom', icon: '🚿' },
+  { id: 'ironing_clothes', label: 'Istri', icon: '👔' },
 ];
 const SERVICE_LABELS = {
   cleaning: 'Safai', laundry: 'Dhulai', cooking: 'Khana Pakana',
@@ -60,12 +60,12 @@ export default function QuickServiceScreen({ navigation, route }) {
   const [durationHours, setDurationHours] = useState(prefill.duration_hours || 2);
 
   // Intent confirmation state
-  const [parsedIntent, setParsedIntent]       = useState(null);
+  const [parsedIntent, setParsedIntent] = useState(null);
   const [intentConfirmed, setIntentConfirmed] = useState(false);
   const [clarifyQuestion, setClarifyQuestion] = useState(null);
-  const [transcript, setTranscript]           = useState(null);
+  const [transcript, setTranscript] = useState(null);
   const [clarificationAnswer, setClarificationAnswer] = useState('');
-  const [originalInput, setOriginalInput]     = useState('');
+  const [originalInput, setOriginalInput] = useState('');
   const [clarificationLoading, setClarificationLoading] = useState(false);
 
   const [userLocation, setUserLocation] = useState(null);
@@ -76,28 +76,28 @@ export default function QuickServiceScreen({ navigation, route }) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        
+
         const location = await Location.getCurrentPositionAsync({});
         setUserLocation({
           lat: location.coords.latitude,
           lng: location.coords.longitude,
         });
-        
+
         const [address] = await Location.reverseGeocodeAsync({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
         });
-        
+
         console.log('[GPS] Full address object:', JSON.stringify(address));
-        
+
         // Priority: most specific to least specific
         const area = address?.district ||
-                     address?.subregion ||
-                     address?.neighborhood ||
-                     address?.street ||
-                     address?.city ||
-                     'Karachi';
-        
+          address?.subregion ||
+          address?.neighborhood ||
+          address?.street ||
+          address?.city ||
+          'Karachi';
+
         console.log('[GPS] Selected area:', area);
         setUserAddress(area);
       } catch (err) {
@@ -106,7 +106,7 @@ export default function QuickServiceScreen({ navigation, route }) {
     })();
   }, []);
 
-  useEffect(() => { getOrCreateSession().then(setSessionId).catch(() => {}); }, []);
+  useEffect(() => { getOrCreateSession().then(setSessionId).catch(() => { }); }, []);
 
   const fetchPrice = useCallback(async (svc, r, dur) => {
     setLoadingPrice(true);
@@ -180,16 +180,16 @@ export default function QuickServiceScreen({ navigation, route }) {
     try {
       const sid = sessionId || await getOrCreateSession();
       const request = await createQuickServiceRequest({
-        session_id:     sid,
-        service_types:  [parsedIntent?.service_type || serviceType],
-        complexity:     parsedIntent?.complexity || 'simple',
-        tasks:          selectedTasks,
-        lat:            userLocation?.lat || 24.8650,
-        lng:            userLocation?.lng || 67.0650,
-        area_label:     parsedIntent?.area || userAddress || 'Karachi',
-        full_address:   parsedIntent?.full_address || null,
-        price_min:      priceData?.price_min || 300,
-        price_max:      priceData?.price_max || 1200,
+        session_id: sid,
+        service_types: [parsedIntent?.service_type || serviceType],
+        complexity: parsedIntent?.complexity || 'simple',
+        tasks: selectedTasks,
+        lat: userLocation?.lat || 24.8650,
+        lng: userLocation?.lng || 67.0650,
+        area_label: parsedIntent?.area || userAddress || 'Karachi',
+        full_address: parsedIntent?.full_address || null,
+        price_min: priceData?.price_min || 300,
+        price_max: priceData?.price_max || 1200,
         estimated_price: priceData?.recommended_price || 500,
       });
       console.log('[THEEK_HAI] QS request created:', request?.id);
@@ -314,7 +314,7 @@ export default function QuickServiceScreen({ navigation, route }) {
                   ) : (
                     <View style={si.theekHaiBtnContent}>
                       <Text style={si.theekHaiBtnEmoji}>✓</Text>
-                      <Text style={si.theekHaiBtnText}>Theek hai, Maids Dhundho</Text>
+                      <Text style={si.theekHaiBtnText}>Theek Hai</Text>
                       <Text style={si.theekHaiBtnArrow}>→</Text>
                     </View>
                   )}
@@ -372,47 +372,47 @@ export default function QuickServiceScreen({ navigation, route }) {
         {/* Price preview with breakdown */}
         <View style={st.priceCard}>
           {loadingPrice ? <ActivityIndicator size="small" color={Colors.primary} />
-          : priceData ? (
-            <>
-              <Text style={st.priceLabel}>Takmini Qeemat</Text>
-              {/* Surge chips — visible when multipliers are active */}
-              {priceData.breakdown && (
-                <View style={st.surgeRow}>
-                  {priceData.breakdown.weekend_multiplier > 1 && (
-                    <View style={st.surgeChip}>
-                      <Text style={st.surgeChipTxt}>📅 Weekend +{Math.round((priceData.breakdown.weekend_multiplier - 1) * 100)}%</Text>
-                    </View>
-                  )}
-                  {priceData.breakdown.time_of_day_multiplier > 1 && (
-                    <View style={st.surgeChip}>
-                      <Text style={st.surgeChipTxt}>⏰ Rush Hour +{Math.round((priceData.breakdown.time_of_day_multiplier - 1) * 100)}%</Text>
-                    </View>
-                  )}
-                  {priceData.breakdown.demand_multiplier > 1 && (
-                    <View style={[st.surgeChip, st.surgeChipHot]}>
-                      <Text style={st.surgeChipTxt}>🔥 High Demand +{Math.round((priceData.breakdown.demand_multiplier - 1) * 100)}%</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-              <Text style={st.priceValue}>Rs. {priceData.recommended_price?.toLocaleString()}</Text>
-              <Text style={st.priceRange}>Rs. {priceData.price_min?.toLocaleString()} – {priceData.price_max?.toLocaleString()}</Text>
-              {priceData.breakdown && (
-                <View style={st.breakdown}>
-                  <View style={st.brkRow}><Text style={st.brkLabel}>Base rate</Text><Text style={st.brkVal}>Rs. {priceData.breakdown.subtotal}</Text></View>
-                  {priceData.breakdown.tasks_extra > 0 && <View style={st.brkRow}><Text style={st.brkLabel}>+ Tasks</Text><Text style={st.brkVal}>Rs. {priceData.breakdown.tasks_extra}</Text></View>}
-                  {priceData.breakdown.time_of_day_multiplier > 1 && <View style={st.brkRow}><Text style={st.brkLabel}>+ {priceData.breakdown.time_label}</Text><Text style={st.brkVal}>×{priceData.breakdown.time_of_day_multiplier}</Text></View>}
-                  {priceData.breakdown.weekend_multiplier > 1 && <View style={st.brkRow}><Text style={st.brkLabel}>+ Weekend</Text><Text style={st.brkVal}>×{priceData.breakdown.weekend_multiplier}</Text></View>}
-                  {priceData.breakdown.multiplier_capped && <Text style={st.capNote}>⚠ Multiplier capped at {priceData.breakdown.total_multiplier}x</Text>}
-                </View>
-              )}
-              <Text style={st.priceNote}>Final qeemat maid ki bid par hogi</Text>
-            </>
-          ) : (
-            <TouchableOpacity onPress={() => fetchPrice(serviceType, rooms)}>
-              <Text style={st.priceFetchBtn}>Qeemat dekhein →</Text>
-            </TouchableOpacity>
-          )}
+            : priceData ? (
+              <>
+                <Text style={st.priceLabel}>Takmini Qeemat</Text>
+                {/* Surge chips — visible when multipliers are active */}
+                {priceData.breakdown && (
+                  <View style={st.surgeRow}>
+                    {priceData.breakdown.weekend_multiplier > 1 && (
+                      <View style={st.surgeChip}>
+                        <Text style={st.surgeChipTxt}>📅 Weekend +{Math.round((priceData.breakdown.weekend_multiplier - 1) * 100)}%</Text>
+                      </View>
+                    )}
+                    {priceData.breakdown.time_of_day_multiplier > 1 && (
+                      <View style={st.surgeChip}>
+                        <Text style={st.surgeChipTxt}>⏰ Rush Hour +{Math.round((priceData.breakdown.time_of_day_multiplier - 1) * 100)}%</Text>
+                      </View>
+                    )}
+                    {priceData.breakdown.demand_multiplier > 1 && (
+                      <View style={[st.surgeChip, st.surgeChipHot]}>
+                        <Text style={st.surgeChipTxt}>🔥 High Demand +{Math.round((priceData.breakdown.demand_multiplier - 1) * 100)}%</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                <Text style={st.priceValue}>Rs. {priceData.recommended_price?.toLocaleString()}</Text>
+                <Text style={st.priceRange}>Rs. {priceData.price_min?.toLocaleString()} – {priceData.price_max?.toLocaleString()}</Text>
+                {priceData.breakdown && (
+                  <View style={st.breakdown}>
+                    <View style={st.brkRow}><Text style={st.brkLabel}>Base rate</Text><Text style={st.brkVal}>Rs. {priceData.breakdown.subtotal}</Text></View>
+                    {priceData.breakdown.tasks_extra > 0 && <View style={st.brkRow}><Text style={st.brkLabel}>+ Tasks</Text><Text style={st.brkVal}>Rs. {priceData.breakdown.tasks_extra}</Text></View>}
+                    {priceData.breakdown.time_of_day_multiplier > 1 && <View style={st.brkRow}><Text style={st.brkLabel}>+ {priceData.breakdown.time_label}</Text><Text style={st.brkVal}>×{priceData.breakdown.time_of_day_multiplier}</Text></View>}
+                    {priceData.breakdown.weekend_multiplier > 1 && <View style={st.brkRow}><Text style={st.brkLabel}>+ Weekend</Text><Text style={st.brkVal}>×{priceData.breakdown.weekend_multiplier}</Text></View>}
+                    {priceData.breakdown.multiplier_capped && <Text style={st.capNote}>⚠ Multiplier capped at {priceData.breakdown.total_multiplier}x</Text>}
+                  </View>
+                )}
+                <Text style={st.priceNote}>Final qeemat maid ki bid par hogi</Text>
+              </>
+            ) : (
+              <TouchableOpacity onPress={() => fetchPrice(serviceType, rooms)}>
+                <Text style={st.priceFetchBtn}>Qeemat dekhein →</Text>
+              </TouchableOpacity>
+            )}
         </View>
 
         {/* Submit */}

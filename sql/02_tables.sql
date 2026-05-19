@@ -38,9 +38,10 @@ CREATE TABLE public.homeowners (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   session_id  TEXT UNIQUE NOT NULL,
   name        TEXT,
-  phone       TEXT,
+  phone_number TEXT UNIQUE NOT NULL,
   area_label  TEXT,
   location    GEOGRAPHY(POINT, 4326),
+  last_seen   TIMESTAMPTZ DEFAULT NOW(),
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -82,6 +83,7 @@ CREATE TABLE public.bookings (
   id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   session_id            TEXT NOT NULL,
   homeowner_id          UUID REFERENCES public.homeowners(id),
+  homeowner_phone       TEXT,
   maid_id               UUID REFERENCES public.maids(id),
   service_types         TEXT[] NOT NULL,
   complexity            TEXT CHECK (complexity IN ('simple','standard','heavy')) DEFAULT 'simple',
@@ -90,6 +92,7 @@ CREATE TABLE public.bookings (
   scheduled_start       TIME NOT NULL,
   scheduled_end         TIME NOT NULL,
   total_price           INTEGER,
+  agreed_price          NUMERIC,
   price_breakdown       JSONB,
   status                TEXT CHECK (status IN (
     'pending','confirmed','en_route','in_progress','completed','cancelled'
@@ -97,6 +100,8 @@ CREATE TABLE public.bookings (
   cancelled_by          TEXT CHECK (cancelled_by IN ('homeowner','maid','platform')),
   cancellation_reason   TEXT,
   reminder_sent         BOOLEAN DEFAULT FALSE,
+  source                TEXT DEFAULT 'standard',
+  qs_request_id         UUID REFERENCES public.quick_service_requests(id),
   created_at            TIMESTAMPTZ DEFAULT NOW(),
   updated_at            TIMESTAMPTZ DEFAULT NOW()
 );

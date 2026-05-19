@@ -127,7 +127,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
       setShowTextFallback(true);
 
       // Reset audio mode on failure
-      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch { }
     }
   };
 
@@ -187,7 +187,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
       setShowTextFallback(true);
 
       // Ensure audio mode is reset even on error
-      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch { }
     } finally {
       setProcessing(false);
       onProcessing?.(false);
@@ -261,7 +261,7 @@ export default function VoiceButton({ onIntentParsed, onProcessing, sessionId, g
         <View style={st.textFallback}>
           <TextInput
             style={st.textInput}
-            placeholder="Yahan likhein... e.g. Kal subah safai chahiye DHA mein"
+            placeholder="Yahan likhein... e.g. Safai ke liye maid chahiye 3 kamre, 2 washroom"
             placeholderTextColor={Colors.textMuted}
             value={textInput}
             onChangeText={setTextInput}
