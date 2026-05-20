@@ -333,70 +333,167 @@ Every pricing API response includes the full `breakdown` object with `market_bas
 ## 8 — Provider Dataset Schema
 
 ### `maids` Table
-
 | Column | Type | Description |
 |---|---|---|
-| `id` | UUID (PK) | Unique maid identifier |
+| `id` | UUID (PK) | Unique identifier |
 | `name` | TEXT | Display name |
 | `phone` | TEXT | Phone number (masked in UI) |
-| `location` | GEOGRAPHY(POINT) | PostGIS point for spatial queries |
-| `area_label` | TEXT | Human-readable area name (e.g., "Gulshan-e-Iqbal") |
-| `service_types` | TEXT[] | Array of offered services (e.g., `{cleaning, laundry}`) |
+| `cnic` | TEXT | CNIC (Unique) |
+| `is_verified` | BOOLEAN | Verification status |
+| `area_label` | TEXT | Human-readable area name |
+| `location` | GEOGRAPHY(POINT) | PostGIS spatial coordinates |
+| `coverage_areas` | TEXT[] | Areas maid is willing to travel to |
+| `service_types` | TEXT[] | Array of offered services |
 | `skill_level` | TEXT | `basic`, `intermediate`, or `expert` |
 | `base_rate` | INTEGER | Hourly rate in PKR |
-| `rate_min` | INTEGER | Minimum acceptable rate |
-| `rate_max` | INTEGER | Maximum rate |
-| `avg_rating` | NUMERIC | Average rating (0–5), updated by `update_maid_rating` RPC |
-| `total_reviews` | INTEGER | Count of reviews received |
-| `jobs_completed` | INTEGER | Total jobs finished |
-| `jobs_on_time` | INTEGER | Jobs completed within scheduled window |
-| `cancellation_count` | INTEGER | Times maid cancelled (used in red flag override) |
-| `no_show_count` | INTEGER | Times maid was no-show |
-| `is_available` | BOOLEAN | Currently accepting bookings |
-| `is_online` | BOOLEAN | Currently active on platform |
-| `working_hours_start` | TIME | Earliest available time |
-| `working_hours_end` | TIME | Latest available time |
-| `active_qs_request_id` | UUID | Currently assigned Quick Service request (NULL if free) |
-| `status` | TEXT | `active`, `suspended`, `inactive` |
-| `coverage_radius_km` | NUMERIC | Maximum travel distance |
+| `rate_min` | INTEGER | Min acceptable bid |
+| `rate_max` | INTEGER | Max acceptable bid |
+| `avg_rating` | NUMERIC | Bayesian updated average rating |
+| `total_reviews` | INTEGER | Review count |
+| `jobs_completed` | INTEGER | Total completed jobs |
+| `jobs_on_time` | INTEGER | Used for reliability score |
+| `jobs_accepted` | INTEGER | Total accepted jobs |
+| `cancellation_count` | INTEGER | Used for red flag override |
+| `no_show_count` | INTEGER | Used for red flag override |
+| `is_online` | BOOLEAN | Active on platform |
+| `is_available` | BOOLEAN | Accepting bookings |
+| `working_hours_start` | TIME | Start of shift |
+| `working_hours_end` | TIME | End of shift |
+| `status` | TEXT | `active`, `suspended`, `under_review` |
+| `active_qs_request_id` | UUID | Locks maid to active Quick Service |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+
+### `homeowners` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Unique identifier |
+| `session_id` | TEXT | App session ID |
+| `name` | TEXT | Display name |
+| `phone_number` | TEXT | Contact number |
+| `area_label` | TEXT | Default area |
+| `location` | GEOGRAPHY(POINT) | Default coordinates |
+| `last_seen` | TIMESTAMPTZ | Activity tracking |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+
+### `quick_service_requests` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Request identifier |
+| `session_id` | TEXT | Links to homeowner |
+| `homeowner_id` | UUID (FK) | Reference to homeowner |
+| `service_types` | TEXT[] | Required services |
+| `complexity` | TEXT | `simple`, `standard`, `heavy` |
+| `tasks` | TEXT[] | Specific tasks |
+| `location` | GEOGRAPHY(POINT) | Job coordinates |
+| `area_label` | TEXT | Job area |
+| `price_min` | INTEGER | Est minimum |
+| `price_max` | INTEGER | Est maximum |
+| `estimated_price` | INTEGER | Target price anchor |
+| `status` | TEXT | `pending_bids`, `bid_selected`, `timed_out`, etc |
+| `selected_bid_id` | UUID | Winning bid |
+| `selected_maid_id` | UUID | Winning maid |
+| `timeout_at` | TIMESTAMPTZ | 5-minute expiry timer |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+| `updated_at` | TIMESTAMPTZ | Last status change |
+
+### `bids` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Bid identifier |
+| `request_id` | UUID (FK) | Links to Quick Service request |
+| `maid_id` | UUID (FK) | Bidding maid |
+| `offered_price` | INTEGER | PKR bid amount |
+| `status` | TEXT | `pending`, `accepted`, `expired`, `rejected` |
+| `created_at` | TIMESTAMPTZ | Bid submission time |
 
 ### `bookings` Table
-
 | Column | Type | Description |
 |---|---|---|
 | `id` | UUID (PK) | Booking identifier |
-| `session_id` | TEXT | Homeowner session identifier |
+| `session_id` | TEXT | Links to homeowner |
+| `homeowner_id` | UUID (FK) | Reference to homeowner |
+| `homeowner_phone` | TEXT | Contact |
 | `maid_id` | UUID (FK) | Assigned maid |
 | `service_types` | TEXT[] | Requested services |
 | `complexity` | TEXT | `simple`, `standard`, `heavy` |
-| `tasks` | TEXT[] | Specific tasks requested |
-| `scheduled_date` | DATE | Booking date |
+| `tasks` | TEXT[] | Specific tasks |
+| `scheduled_date` | DATE | Job date |
 | `scheduled_start` | TIME | Start time |
 | `scheduled_end` | TIME | End time |
-| `total_price` | NUMERIC | Agreed price in PKR |
-| `price_breakdown` | JSONB | Full pricing breakdown object |
-| `status` | TEXT | `pending` → `confirmed` → `in_progress` → `completed` / `cancelled` / `disputed` |
-| `cancelled_by` | TEXT | `homeowner` or `maid` |
+| `total_price` | INTEGER | Estimated price |
+| `agreed_price` | NUMERIC | Final price |
+| `price_breakdown` | JSONB | Full pricing multipliers and caps |
+| `status` | TEXT | `pending`, `confirmed`, `completed`, `cancelled`, etc |
+| `cancelled_by` | TEXT | `homeowner`, `maid`, `platform` |
 | `cancellation_reason` | TEXT | Free text reason |
-| `created_at` | TIMESTAMPTZ | Record creation |
+| `reminder_sent` | BOOLEAN | Notification flag |
+| `source` | TEXT | `standard` or `quick_service` |
+| `qs_request_id` | UUID (FK) | Links to origin QS request |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
 | `updated_at` | TIMESTAMPTZ | Last status change |
 
-### `agent_traces` Table
+### `reviews` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Review identifier |
+| `booking_id` | UUID (FK) | Linked booking |
+| `maid_id` | UUID (FK) | Reviewed maid |
+| `session_id` | TEXT | Reviewer session |
+| `rating` | INTEGER | 1 to 5 stars |
+| `comment` | TEXT | Feedback |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
 
+### `disputes` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Dispute identifier |
+| `booking_id` | UUID (FK) | Linked booking |
+| `session_id` | TEXT | Reporter session |
+| `dispute_type` | TEXT | `no_show`, `quality_complaint`, `other` |
+| `description` | TEXT | Problem details |
+| `status` | TEXT | `open`, `resolved`, `dismissed` |
+| `agent_assessment` | JSONB | AI resolution from DisputeAgent |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+| `resolved_at` | TIMESTAMPTZ | Resolution timestamp |
+
+### `agent_traces` Table
 | Column | Type | Description |
 |---|---|---|
 | `id` | UUID (PK) | Trace identifier |
-| `session_id` | TEXT | Links trace to user session |
-| `session_type` | TEXT | `quick_service`, `booking`, `dispute` |
-| `agent_name` | TEXT | Agent that produced this trace (e.g., `IntentAgent`, `DisputeAgent`) |
-| `input_summary` | TEXT | Human-readable summary of agent input |
-| `output_summary` | TEXT | Human-readable summary of agent output |
-| `full_input` | JSONB | Complete input payload for debugging |
-| `full_output` | JSONB | Complete output payload for debugging |
-| `duration_ms` | INTEGER | Processing time in milliseconds |
-| `error` | TEXT | Error message if agent failed (NULL on success) |
-| `created_at` | TIMESTAMPTZ | Timestamp of trace creation |
+| `session_id` | TEXT | Links to user session |
+| `agent_name` | TEXT | Name of AI agent (e.g. `IntentAgent`) |
+| `reference_id` | UUID | Links to booking/request |
+| `session_type` | TEXT | `quick_service` or `booking` |
+| `input_summary` | TEXT | Human-readable input |
+| `output_summary` | TEXT | Human-readable output |
+| `full_input` | JSONB | Complete JSON payload |
+| `full_output` | JSONB | Complete JSON payload |
+| `duration_ms` | INTEGER | Inference latency |
+| `error` | TEXT | Exception trace if failed |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
 
+### `notifications_log` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Log identifier |
+| `recipient_phone` | TEXT | Target number |
+| `channel` | TEXT | `whatsapp`, `sms`, `email` |
+| `message_type` | TEXT | Template type |
+| `message_body` | TEXT | Message content |
+| `status` | TEXT | `sent`, `failed`, `pending` |
+| `reference_id` | UUID | Links to booking |
+| `n8n_execution_id` | TEXT | Workflow ID |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+
+### `in_app_notifications` Table
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID (PK) | Notification identifier |
+| `session_id` | TEXT | Target user |
+| `message` | TEXT | Notification content |
+| `type` | TEXT | `match_confirmed`, `reminder`, etc |
+| `read` | BOOLEAN | Read receipt |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
 ---
 
 ## 9 — Multilingual Robustness
