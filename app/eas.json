@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 7.6.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wifxnrsnxdbmjgucqhea.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpZnhucnNueGRibWpndWNxaGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMDEyOTEsImV4cCI6MjA5NDU3NzI5MX0.7uOOfPNDErEmSDZDmKHuJRkZc1SIdZOOnfiViLsltt4",
+        "EXPO_PUBLIC_API_URL": "https://homemaid-9lzy.onrender.com"
+      }
+    },
+    "production": {}
+  },
+  "submit": {
+    "production": {}
+  }
+}
