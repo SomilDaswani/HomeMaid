@@ -1,6 +1,6 @@
 # HomeMaid
 
-AI-powered real-time domestic worker marketplace for Pakistan built for Google Antigravity Hackathon Challenge 2.
+AI-powered real-time domestic worker marketplace for Pakistan.
 
 ![Status](https://img.shields.io/badge/Status-Live-success) ![Platform](https://img.shields.io/badge/Platform-React_Native-blue) ![AI](https://img.shields.io/badge/AI-Groq_&_Gemini-orange) ![Backend](https://img.shields.io/badge/Backend-Node.js-green) ![Database](https://img.shields.io/badge/Database-Supabase-3ECF8E) ![Deployed_on](https://img.shields.io/badge/Deployed_on-Render-purple)
 
@@ -168,7 +168,7 @@ cd HomeMaid
 cd api
 npm install
 # Create and configure .env file (see Environment Variables section)
-npm run dev
+node index.js
 ```
 
 ### Frontend setup
